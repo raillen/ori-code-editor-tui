@@ -74,15 +74,18 @@ cargo clippy --all-targets -- -D warnings
 
 ```text
 crates/
-  oride-core/    # rope buffer, document, selection, undo (no UI)
-  oride-config/  # TOML load/merge
-  oride-keymap/  # chords → actions
-  oride-ui/      # ratatui widgets + theme
-  oride-app/     # event loop + key dispatch
-  oride/         # binary CLI
+  oride-core/     # rope buffer, documents/tabs, undo
+  oride-config/   # TOML load/merge
+  oride-keymap/   # chords → actions
+  oride-fs/       # project tree, create file/dir, icons
+  oride-git/      # git status porcelain for tree badges
+  oride-terminal/ # embedded PTY panel
+  oride-ui/       # ratatui widgets
+  oride-app/      # composition + event loop
+  oride/          # binary CLI
 docs/
-  design.md      # architecture & roadmap
-  config.md      # TOML reference
+  design.md       # architecture & roadmap
+  config.md       # TOML reference
 ```
 
 ## Relation to OriScript
