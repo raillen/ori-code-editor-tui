@@ -45,6 +45,7 @@ cargo build --release
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
 | `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next tab |
 | `Alt+←` / `Alt+→` | Previous / next tab |
+| (tab bar) | Aba ativa = chip ciano (fundo da aba inteira) |
 | `Ctrl+B` / `Ctrl+E` | Focus tree / editor |
 | `Ctrl+O` | **Open folder** (navigate dirs · `Ctrl+Enter` confirma) |
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
