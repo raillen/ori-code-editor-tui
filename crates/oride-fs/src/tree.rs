@@ -136,11 +136,22 @@ impl ProjectTree {
             Some(r) => r,
             None => return Ok(None),
         };
-        if row.path == self.root {
-            return Ok(None);
-        }
         if row.is_dir {
-            self.toggle_path(&row.path)?;
+            // Raiz: já “expandida”; Enter em dir colapsada expande, expandida não fecha.
+            if row.path == self.root {
+                return Ok(None);
+            }
+            if !row.expanded {
+                self.expand_path(&row.path)?;
+            } else {
+                // Já expandida: se tiver filhos visíveis, vai para o primeiro filho
+                let rows = self.flat_rows();
+                if let Some(sel) = rows.iter().position(|r| r.path == row.path) {
+                    if sel + 1 < rows.len() && rows[sel + 1].depth > row.depth {
+                        self.selected = sel + 1;
+                    }
+                }
+            }
             Ok(None)
         } else {
             Ok(Some(row.path))
@@ -153,6 +164,62 @@ impl ProjectTree {
                 self.toggle_path(&row.path)?;
             }
         }
+        Ok(())
+    }
+
+    /// Seta/direita: expande diretório selecionado.
+    pub fn expand_selected(&mut self) -> Result<(), TreeError> {
+        if let Some(row) = self.selected_row() {
+            if row.is_dir && !row.expanded {
+                if row.path == self.root {
+                    return Ok(());
+                }
+                self.expand_path(&row.path)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Esquerda: colapsa dir expandida, ou sobe para o pai.
+    pub fn collapse_or_parent(&mut self) -> Result<(), TreeError> {
+        let Some(row) = self.selected_row() else {
+            return Ok(());
+        };
+        if row.is_dir && row.expanded && row.path != self.root {
+            self.collapse_path(&row.path)?;
+            return Ok(());
+        }
+        // Sobe para o pai na lista flat
+        if row.path == self.root {
+            return Ok(());
+        }
+        let parent = row
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.root.clone());
+        let rows = self.flat_rows();
+        if let Some(idx) = rows.iter().position(|r| r.path == parent) {
+            self.selected = idx;
+        } else {
+            self.selected = 0;
+        }
+        Ok(())
+    }
+
+    fn expand_path(&mut self, path: &Path) -> Result<(), TreeError> {
+        if path == self.root {
+            return Ok(());
+        }
+        set_expanded_in_nodes(&mut self.children, path, true, self.show_hidden)?;
+        Ok(())
+    }
+
+    fn collapse_path(&mut self, path: &Path) -> Result<(), TreeError> {
+        if path == self.root {
+            return Ok(());
+        }
+        set_expanded_in_nodes(&mut self.children, path, false, self.show_hidden)?;
         Ok(())
     }
 
@@ -340,6 +407,34 @@ fn toggle_in_nodes(nodes: &mut [Node], path: &Path, show_hidden: bool) -> Result
     Ok(false)
 }
 
+fn set_expanded_in_nodes(
+    nodes: &mut [Node],
+    path: &Path,
+    expanded: bool,
+    show_hidden: bool,
+) -> Result<bool, TreeError> {
+    for n in nodes.iter_mut() {
+        if n.path == path {
+            if !n.is_dir {
+                return Ok(true);
+            }
+            n.expanded = expanded;
+            if n.expanded && n.children.is_none() {
+                n.children = Some(read_dir_nodes(&n.path, show_hidden)?);
+            }
+            return Ok(true);
+        }
+        if n.is_dir {
+            if let Some(ch) = n.children.as_mut() {
+                if set_expanded_in_nodes(ch, path, expanded, show_hidden)? {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn ensure_expanded(nodes: &mut [Node], path: &Path, show_hidden: bool) -> Result<bool, TreeError> {
     for n in nodes.iter_mut() {
         if n.path == path {
@@ -423,5 +518,35 @@ mod tests {
         assert!(tree.activate_selected().unwrap().is_none());
         let rows = tree.flat_rows();
         assert!(rows.iter().any(|r| r.name == "main.oris"));
+    }
+
+    #[test]
+    fn navigate_up_down_and_open_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.oris"), "a").unwrap();
+        fs::write(dir.path().join("b.oris"), "b").unwrap();
+        let mut tree = ProjectTree::open(dir.path(), false).unwrap();
+        assert_eq!(tree.selected_index(), 0); // root
+        tree.move_selection(1);
+        let row = tree.selected_row().unwrap();
+        assert!(row.name.ends_with(".oris"));
+        tree.move_selection(1);
+        let path = tree.activate_selected().unwrap();
+        assert!(path.is_some());
+    }
+
+    #[test]
+    fn collapse_or_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/x.oris"), "x").unwrap();
+        let mut tree = ProjectTree::open(dir.path(), false).unwrap();
+        tree.set_selected(1); // src
+        tree.expand_selected().unwrap();
+        // move to child
+        tree.move_selection(1);
+        assert_eq!(tree.selected_row().unwrap().name, "x.oris");
+        tree.collapse_or_parent().unwrap();
+        assert_eq!(tree.selected_row().unwrap().name, "src");
     }
 }

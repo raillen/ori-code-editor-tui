@@ -2,7 +2,7 @@
 
 use oride_config::ThemeUiConfig;
 use oride_syntax::HighlightKind;
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use thiserror::Error;
 
 use crate::color::{parse_color, ColorParseError};
@@ -118,7 +118,29 @@ impl UiTheme {
 
     #[must_use]
     pub fn cursor_style(self) -> Style {
-        Style::default().fg(self.cursor_fg).bg(self.cursor_bg)
+        // REVERSED garante contraste em qualquer tema; cores explícitas reforçam.
+        Style::default()
+            .fg(self.cursor_fg)
+            .bg(self.cursor_bg)
+            .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    }
+
+    /// Seleção da árvore quando o painel tem foco.
+    #[must_use]
+    pub fn tree_selection_focused(self) -> Style {
+        Style::default()
+            .fg(self.cursor_fg)
+            .bg(self.cursor_bg)
+            .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    }
+
+    /// Seleção da árvore quando o painel NÃO tem foco (ainda visível).
+    #[must_use]
+    pub fn tree_selection_unfocused(self) -> Style {
+        Style::default()
+            .fg(self.status_fg)
+            .bg(self.status_bg)
+            .add_modifier(Modifier::BOLD)
     }
 
     #[must_use]

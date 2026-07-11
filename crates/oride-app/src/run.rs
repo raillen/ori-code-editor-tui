@@ -17,7 +17,7 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
     };
 
     let mut guard = TerminalGuard::enter().context("enter terminal raw mode")?;
-    guard.terminal().hide_cursor()?;
+    // Cursor do terminal é posicionado pelo render do editor (set_cursor_position).
 
     loop {
         guard.terminal().draw(|frame| app.draw(frame))?;

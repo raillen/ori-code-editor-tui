@@ -45,6 +45,8 @@ enum Overlay {
 enum PromptKind {
     NewFile,
     NewDir,
+    /// Caminho de pasta a abrir como workspace.
+    OpenFolder,
 }
 
 pub struct App {
@@ -319,25 +321,33 @@ impl App {
             KeyCode::Esc => self.overlay = Overlay::None,
             KeyCode::Enter => {
                 self.overlay = Overlay::None;
-                if let Some(tree) = self.tree.as_mut() {
-                    let create = match kind {
-                        PromptKind::NewFile => CreateKind::File,
-                        PromptKind::NewDir => CreateKind::Directory,
-                    };
-                    match tree.create_under_selection(create, &buffer) {
-                        Ok(path) => {
-                            self.refresh_git_and_index();
-                            if kind == PromptKind::NewFile {
-                                if let Err(e) = self.store.open_path(path) {
-                                    self.set_status(format!("open: {e}"));
-                                } else {
-                                    self.focus = Focus::Editor;
+                match kind {
+                    PromptKind::OpenFolder => {
+                        self.open_workspace_folder(PathBuf::from(buffer.trim()));
+                    }
+                    PromptKind::NewFile | PromptKind::NewDir => {
+                        if let Some(tree) = self.tree.as_mut() {
+                            let create = match kind {
+                                PromptKind::NewFile => CreateKind::File,
+                                PromptKind::NewDir => CreateKind::Directory,
+                                PromptKind::OpenFolder => unreachable!(),
+                            };
+                            match tree.create_under_selection(create, &buffer) {
+                                Ok(path) => {
+                                    self.refresh_git_and_index();
+                                    if kind == PromptKind::NewFile {
+                                        if let Err(e) = self.store.open_path(path) {
+                                            self.set_status(format!("open: {e}"));
+                                        } else {
+                                            self.focus = Focus::Editor;
+                                        }
+                                    } else {
+                                        self.set_status("folder created");
+                                    }
                                 }
-                            } else {
-                                self.set_status("folder created");
+                                Err(e) => self.set_status(format!("create: {e}")),
                             }
                         }
-                        Err(e) => self.set_status(format!("create: {e}")),
                     }
                 }
             }
@@ -354,26 +364,28 @@ impl App {
     }
 
     fn handle_tree_key(&mut self, key: KeyEvent) -> bool {
-        // Atalhos globais ainda passam pelo keymap se não consumidos
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
+        // Atalhos com Ctrl ainda passam pelo keymap (foco, save, etc.)
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT)
+        {
             return false;
         }
         match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(t) = self.tree.as_mut() {
                     t.move_selection(-1);
                     self.ensure_tree_visible();
                 }
                 true
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(t) = self.tree.as_mut() {
                     t.move_selection(1);
                     self.ensure_tree_visible();
                 }
                 true
             }
-            KeyCode::Enter | KeyCode::Right => {
+            KeyCode::Enter => {
                 if let Some(t) = self.tree.as_mut() {
                     match t.activate_selected() {
                         Ok(Some(path)) => {
@@ -382,22 +394,77 @@ impl App {
                             } else {
                                 self.focus = Focus::Editor;
                                 self.scroll_y = 0;
+                                self.set_status("arquivo aberto");
                             }
                         }
-                        Ok(None) => self.ensure_tree_visible(),
+                        Ok(None) => {
+                            self.ensure_tree_visible();
+                            self.set_status("↑↓ navegar · Enter abrir/expandir · ←→ colapsar/expandir · Esc editor");
+                        }
                         Err(e) => self.set_status(format!("tree: {e}")),
                     }
                 }
                 true
             }
-            KeyCode::Left => {
+            KeyCode::Right | KeyCode::Char('l') => {
                 if let Some(t) = self.tree.as_mut() {
-                    let _ = t.toggle_selected();
+                    if let Err(e) = t.expand_selected() {
+                        self.set_status(format!("tree: {e}"));
+                    }
+                    self.ensure_tree_visible();
                 }
                 true
             }
-            KeyCode::Esc => {
+            KeyCode::Left | KeyCode::Char('h') => {
+                if let Some(t) = self.tree.as_mut() {
+                    if let Err(e) = t.collapse_or_parent() {
+                        self.set_status(format!("tree: {e}"));
+                    }
+                    self.ensure_tree_visible();
+                }
+                true
+            }
+            KeyCode::Char(' ') => {
+                if let Some(t) = self.tree.as_mut() {
+                    if let Err(e) = t.toggle_selected() {
+                        self.set_status(format!("tree: {e}"));
+                    }
+                    self.ensure_tree_visible();
+                }
+                true
+            }
+            KeyCode::Tab | KeyCode::Esc => {
                 self.focus = Focus::Editor;
+                self.set_status("foco: editor (Ctrl+B árvore · Ctrl+E editor)");
+                true
+            }
+            KeyCode::PageUp => {
+                if let Some(t) = self.tree.as_mut() {
+                    t.move_selection(-10);
+                    self.ensure_tree_visible();
+                }
+                true
+            }
+            KeyCode::PageDown => {
+                if let Some(t) = self.tree.as_mut() {
+                    t.move_selection(10);
+                    self.ensure_tree_visible();
+                }
+                true
+            }
+            KeyCode::Home => {
+                if let Some(t) = self.tree.as_mut() {
+                    t.set_selected(0);
+                    self.ensure_tree_visible();
+                }
+                true
+            }
+            KeyCode::End => {
+                if let Some(t) = self.tree.as_mut() {
+                    let n = t.flat_rows().len().saturating_sub(1);
+                    t.set_selected(n);
+                    self.ensure_tree_visible();
+                }
                 true
             }
             _ => false,
@@ -600,8 +667,12 @@ impl App {
                 self.show_tree = !self.show_tree;
                 if self.show_tree {
                     self.focus = Focus::Tree;
-                } else if self.focus == Focus::Tree {
-                    self.focus = Focus::Editor;
+                    self.set_status("árvore visível · foco na árvore (Ctrl+E volta ao editor)");
+                } else {
+                    if self.focus == Focus::Tree {
+                        self.focus = Focus::Editor;
+                    }
+                    self.set_status("árvore oculta");
                 }
             }
             Action::ToggleTerminal => {
@@ -618,14 +689,43 @@ impl App {
             }
             Action::FocusTree => {
                 self.show_tree = true;
+                if self.tree.is_none() {
+                    self.tree = ProjectTree::open(&self.workspace, false).ok();
+                }
                 self.focus = Focus::Tree;
+                self.set_status(
+                    "foco: árvore · ↑↓/jk · Enter abrir · ←→ expandir/colapsar · Ctrl+E editor",
+                );
             }
-            Action::FocusEditor => self.focus = Focus::Editor,
+            Action::FocusEditor => {
+                self.focus = Focus::Editor;
+                self.set_status("foco: editor (Ctrl+B árvore · Ctrl+O abrir pasta)");
+            }
+            Action::FocusToggleTreeEditor => match self.focus {
+                Focus::Tree => {
+                    self.focus = Focus::Editor;
+                    self.set_status("foco: editor");
+                }
+                _ => {
+                    self.show_tree = true;
+                    if self.tree.is_none() {
+                        self.tree = ProjectTree::open(&self.workspace, false).ok();
+                    }
+                    self.focus = Focus::Tree;
+                    self.set_status("foco: árvore");
+                }
+            },
             Action::FocusTerminal => {
                 if let Some(term) = self.terminal.as_mut() {
                     term.visible = true;
                     self.focus = Focus::Terminal;
                 }
+            }
+            Action::OpenFolder => {
+                self.overlay = Overlay::Prompt {
+                    kind: PromptKind::OpenFolder,
+                    buffer: self.workspace.display().to_string(),
+                };
             }
             Action::NextTab => {
                 self.store.activate_next_tab();
@@ -682,6 +782,46 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Troca o workspace para `path` (pasta no sistema).
+    fn open_workspace_folder(&mut self, path: PathBuf) {
+        let path = if path.as_os_str().is_empty() {
+            self.set_status("caminho vazio");
+            return;
+        } else {
+            path
+        };
+        let path = match std::fs::canonicalize(&path) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("pasta inválida: {e}"));
+                return;
+            }
+        };
+        if !path.is_dir() {
+            self.set_status(format!("não é pasta: {}", path.display()));
+            return;
+        }
+        self.workspace = path;
+        match ProjectTree::open(&self.workspace, false) {
+            Ok(t) => self.tree = Some(t),
+            Err(e) => {
+                self.tree = None;
+                self.set_status(format!("árvore: {e}"));
+                return;
+            }
+        }
+        self.show_tree = true;
+        self.focus = Focus::Tree;
+        self.tree_scroll = 0;
+        self.refresh_git_and_index();
+        // reinicia terminal no novo cwd se possível
+        if let Some(old) = self.terminal.take() {
+            drop(old);
+        }
+        self.terminal = EmbeddedTerminal::spawn(&self.workspace, 80, 12).ok();
+        self.set_status(format!("projeto: {}", self.workspace.display()));
     }
 
     fn close_active_tab(&mut self) -> Result<(), DocumentError> {
@@ -824,8 +964,9 @@ impl App {
             }
             Overlay::Prompt { kind, buffer } => {
                 let title = match kind {
-                    PromptKind::NewFile => "new file name",
-                    PromptKind::NewDir => "new folder name",
+                    PromptKind::NewFile => "novo arquivo",
+                    PromptKind::NewDir => "nova pasta",
+                    PromptKind::OpenFolder => "abrir pasta de projeto (caminho)",
                 };
                 let items: &[String] = &[];
                 let view = PaletteView {
@@ -895,6 +1036,7 @@ impl App {
             scroll_y: self.scroll_y,
             show_line_numbers: self.show_line_numbers,
             highlights: self.highlight.spans(),
+            show_cursor: self.focus == Focus::Editor && self.overlay == Overlay::None,
         };
         render_editor(frame, editor_area, &view, &self.theme);
     }
@@ -910,15 +1052,15 @@ impl App {
             .map(|b| format!("  git:{b}"))
             .unwrap_or_default();
         let focus = match self.focus {
-            Focus::Editor => "edit",
-            Focus::Tree => "tree",
+            Focus::Editor => "editor",
+            Focus::Tree => "árvore",
             Focus::Terminal => "term",
         };
         let lang = self.highlight.language().as_str();
         let mut message = self.status_message.clone();
         if message.is_none() {
             message = Some(format!(
-                "{focus} · {lang}{branch} · Ctrl+P file · Ctrl+Shift+P cmd · Ctrl+B tree · Ctrl+` term"
+                "{focus} · {lang}{branch} · Ctrl+B árvore · Ctrl+E editor · Ctrl+O pasta · Ctrl+P arquivo"
             ));
         }
         let status = StatusModel {
@@ -1061,5 +1203,49 @@ mod tests {
     fn fuzzy_subsequence() {
         assert!(fuzzy_match("ore", "oride-core"));
         assert!(!fuzzy_match("zzz", "oride"));
+    }
+
+    #[test]
+    fn focus_tree_and_editor_actions() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::FocusTree));
+        assert_eq!(app.focus, Focus::Tree);
+        assert!(app.show_tree);
+        app.apply(KeyCommand::Action(Action::FocusEditor));
+        assert_eq!(app.focus, Focus::Editor);
+        app.apply(KeyCommand::Action(Action::FocusToggleTreeEditor));
+        assert_eq!(app.focus, Focus::Tree);
+        app.apply(KeyCommand::Action(Action::FocusToggleTreeEditor));
+        assert_eq!(app.focus, Focus::Editor);
+    }
+
+    #[test]
+    fn open_folder_prompt() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::OpenFolder));
+        assert!(matches!(
+            app.overlay,
+            Overlay::Prompt {
+                kind: PromptKind::OpenFolder,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn map_focus_and_open_folder_keys() {
+        let app = App::new_empty();
+        assert_eq!(
+            app.map_key(key_ctrl(KeyCode::Char('b'))),
+            Some(KeyCommand::Action(Action::FocusTree))
+        );
+        assert_eq!(
+            app.map_key(key_ctrl(KeyCode::Char('e'))),
+            Some(KeyCommand::Action(Action::FocusEditor))
+        );
+        assert_eq!(
+            app.map_key(key_ctrl(KeyCode::Char('o'))),
+            Some(KeyCommand::Action(Action::OpenFolder))
+        );
     }
 }

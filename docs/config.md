@@ -43,7 +43,9 @@ Exemplo completo: [`assets/config.example.toml`](../assets/config.example.toml).
 
 Chords: `ctrl+s`, `shift+left`, `esc`, `pageup`, `ctrl+shift+p`, … (minúsculas, `+` como separador).
 
-Defaults P1: `ctrl+b` tree, `ctrl+\`` terminal, `ctrl+p` open, `ctrl+shift+p` commands.
+Defaults: `ctrl+b` foco árvore, `ctrl+e` foco editor, `ctrl+o` abrir pasta,
+`ctrl+shift+b` mostrar/ocultar árvore, `ctrl+\`` terminal, `ctrl+p` arquivo,
+`ctrl+shift+p` comandos.
 
 ## Validação
 

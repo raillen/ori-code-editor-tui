@@ -41,7 +41,10 @@ cargo build --release
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
 | `Ctrl+PgUp` / `Ctrl+PgDn` | Prev / next tab |
-| `Ctrl+B` | Toggle project tree |
+| `Ctrl+B` | **Focus tree** (show + navigate) |
+| `Ctrl+E` | **Focus editor** |
+| `Ctrl+Shift+B` | Hide/show tree panel |
+| `Ctrl+O` | **Open project folder** (path prompt) |
 | `Ctrl+\`` | Toggle embedded terminal |
 | `Ctrl+P` | Fuzzy open file |
 | `Ctrl+Shift+P` | Command palette |
@@ -49,8 +52,8 @@ cargo build --release
 | `F5` | Refresh tree + git |
 | `Esc` or `Ctrl+Q` | Close overlay / unfocus / quit (2× if dirty) |
 
-**Tree:** ↑↓ navigate · Enter open/expand · focus with `Ctrl+B`.  
-**Terminal:** type when focused · `Esc` back to editor.  
+**Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  
+**Terminal:** type when focused · `Esc` → editor.  
 **Icons:** Nerd Font glyphs (ASCII fallback exists in code).
 
 ### Config

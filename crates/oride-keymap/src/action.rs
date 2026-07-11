@@ -13,12 +13,24 @@ pub enum Action {
     InsertTab,
     Backspace,
     Delete,
-    MoveLeft { extend: bool },
-    MoveRight { extend: bool },
-    MoveUp { extend: bool },
-    MoveDown { extend: bool },
-    MoveLineStart { extend: bool },
-    MoveLineEnd { extend: bool },
+    MoveLeft {
+        extend: bool,
+    },
+    MoveRight {
+        extend: bool,
+    },
+    MoveUp {
+        extend: bool,
+    },
+    MoveDown {
+        extend: bool,
+    },
+    MoveLineStart {
+        extend: bool,
+    },
+    MoveLineEnd {
+        extend: bool,
+    },
     PageUp,
     PageDown,
     // IDE shell (P1)
@@ -36,6 +48,10 @@ pub enum Action {
     TreeNewFile,
     TreeNewDir,
     TreeRefresh,
+    /// Abre uma pasta como workspace do editor.
+    OpenFolder,
+    /// Alterna foco entre editor e árvore (sem esconder o painel).
+    FocusToggleTreeEditor,
 }
 
 impl Action {
@@ -73,6 +89,8 @@ impl Action {
             Self::TreeNewFile => "New file (tree)",
             Self::TreeNewDir => "New folder (tree)",
             Self::TreeRefresh => "Refresh tree",
+            Self::OpenFolder => "Open folder…",
+            Self::FocusToggleTreeEditor => "Focus: toggle tree / editor",
         }
     }
 
@@ -86,10 +104,12 @@ impl Action {
             Action::CloseTab,
             Action::NextTab,
             Action::PrevTab,
+            Action::OpenFolder,
             Action::ToggleTree,
             Action::ToggleTerminal,
             Action::FocusTree,
             Action::FocusEditor,
+            Action::FocusToggleTreeEditor,
             Action::FocusTerminal,
             Action::OpenFileFuzzy,
             Action::CommandPalette,
@@ -143,6 +163,8 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "tree_new_file" => Action::TreeNewFile,
         "tree_new_dir" => Action::TreeNewDir,
         "tree_refresh" => Action::TreeRefresh,
+        "open_folder" => Action::OpenFolder,
+        "focus_toggle_tree_editor" => Action::FocusToggleTreeEditor,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)

@@ -3,7 +3,7 @@
 use oride_fs::{file_icon, TreeRow};
 use oride_git::GitFileStatus;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
@@ -30,19 +30,33 @@ pub fn render_tree(frame: &mut Frame, area: Rect, view: &TreeView<'_>, theme: &U
     } else {
         Borders::RIGHT
     };
+    let title = if view.focused {
+        format!(" {} [foco] ", view.title)
+    } else {
+        format!(" {} ", view.title)
+    };
     let block = Block::default()
-        .title(format!(" {} ", view.title))
+        .title(title)
         .borders(border)
         .style(theme.editor_style());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let visible = inner.height as usize;
-    let start = view.scroll.min(view.rows.len().saturating_sub(1));
+    if visible == 0 {
+        return;
+    }
+    let row_count = view.rows.len();
+    let start = if row_count == 0 {
+        0
+    } else {
+        view.scroll.min(row_count.saturating_sub(1))
+    };
+
     let mut lines = Vec::new();
     for row_i in 0..visible {
         let idx = start + row_i;
-        if idx >= view.rows.len() {
+        if idx >= row_count {
             lines.push(Line::from(""));
             continue;
         }
@@ -60,12 +74,23 @@ pub fn render_tree(frame: &mut Frame, area: Rect, view: &TreeView<'_>, theme: &U
             .map(|s| format!(" {}", s.badge()))
             .unwrap_or_default();
 
-        let text = format!("{indent}{icon} {}{git_badge}", row.name);
+        let marker = if row.is_dir {
+            if row.expanded {
+                "▾ "
+            } else {
+                "▸ "
+            }
+        } else {
+            "  "
+        };
+
+        let text = format!("{indent}{marker}{icon} {}{git_badge}", row.name);
         let style = if idx == view.selected {
-            Style::default()
-                .fg(theme.cursor_fg)
-                .bg(theme.cursor_bg)
-                .add_modifier(Modifier::BOLD)
+            if view.focused {
+                theme.tree_selection_focused()
+            } else {
+                theme.tree_selection_unfocused()
+            }
         } else if git_badge.contains('M') {
             Style::default().fg(theme.status_dirty)
         } else {

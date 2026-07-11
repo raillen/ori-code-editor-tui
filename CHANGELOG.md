@@ -8,6 +8,13 @@
 - Crate `oride-syntax` + vendored `tree-sitter-oriscript`
 - Language id in status line; syntax colors on editor viewport
 
+### Fixed (P2 polish)
+
+- Cursor visível (cell invertida + `set_cursor_position` no terminal)
+- Atalhos explícitos: `Ctrl+B` foco árvore, `Ctrl+E` foco editor (`Ctrl+Shift+B` oculta painel)
+- Navegação da árvore: ↑↓/jk, ←→/hl, Enter, Space, Home/End
+- `Ctrl+O` / palette “Open folder…” — abrir pasta de projeto no sistema
+
 ## 0.1.0-alpha.2
 
 ### Added

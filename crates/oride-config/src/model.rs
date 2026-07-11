@@ -192,10 +192,15 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("shift+home", "move_line_start_extend"),
         ("shift+end", "move_line_end_extend"),
         ("tab", "insert_tab"),
-        // P1
-        ("ctrl+b", "toggle_tree"),
+        // P1 / P2 shell
+        // Foco explícito editor ↔ árvore (não esconde o painel)
+        ("ctrl+b", "focus_tree"),
+        ("ctrl+e", "focus_editor"),
+        ("ctrl+shift+b", "toggle_tree"),
+        ("ctrl+shift+e", "focus_toggle_tree_editor"),
         ("ctrl+`", "toggle_terminal"),
         ("ctrl+\\", "focus_tree"),
+        ("ctrl+o", "open_folder"),
         ("ctrl+pageup", "prev_tab"),
         ("ctrl+pagedown", "next_tab"),
         ("ctrl+w", "close_tab"),
