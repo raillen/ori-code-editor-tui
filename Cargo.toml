@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/oride-core",
+    "crates/oride",
+]
+default-members = ["crates/oride"]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/raillen/oride"
+authors = ["raillen"]
+rust-version = "1.80"
+
+[workspace.dependencies]
+oride-core = { path = "crates/oride-core" }
+ropey = "1.6"
+thiserror = "2"
+anyhow = "1"

@@ -1,0 +1,13 @@
+[package]
+name = "oride-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Text buffers, documents, selection and undo for Oride (UI-free)"
+rust-version.workspace = true
+
+[dependencies]
+ropey = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

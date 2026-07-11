@@ -1,0 +1,15 @@
+[package]
+name = "oride"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Oride — TUI code editor (OriScript-first mini IDE)"
+rust-version.workspace = true
+
+[[bin]]
+name = "oride"
+path = "src/main.rs"
+
+[dependencies]
+oride-core = { workspace = true }
+anyhow = { workspace = true }

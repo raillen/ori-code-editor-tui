@@ -1,0 +1,368 @@
+//! Documento (buffer + path + seleção + undo) e store multi-tab.
+
+use std::path::{Path, PathBuf};
+
+use thiserror::Error;
+
+use crate::buffer::{Buffer, BufferError};
+use crate::position::ByteOffset;
+use crate::selection::Selection;
+use crate::undo::{Edit, UndoStack};
+
+/// Identificador opaco de documento aberto (tab).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DocumentId(u64);
+
+impl DocumentId {
+    #[must_use]
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum DocumentError {
+    #[error(transparent)]
+    Buffer(#[from] BufferError),
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("document {0:?} not found")]
+    NotFound(DocumentId),
+    #[error("no active document")]
+    NoActiveDocument,
+}
+
+/// Um arquivo (ou buffer sem path) aberto no editor.
+#[derive(Debug)]
+pub struct Document {
+    id: DocumentId,
+    path: Option<PathBuf>,
+    buffer: Buffer,
+    selection: Selection,
+    undo: UndoStack,
+    dirty: bool,
+}
+
+impl Document {
+    #[must_use]
+    pub fn id(&self) -> DocumentId {
+        self.id
+    }
+
+    #[must_use]
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    #[must_use]
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    #[must_use]
+    pub fn selection(&self) -> Selection {
+        self.selection
+    }
+
+    pub fn set_selection(&mut self, selection: Selection) {
+        self.selection = selection;
+        self.undo.commit_group();
+    }
+
+    /// Título para tab: nome do arquivo ou "untitled".
+    #[must_use]
+    pub fn tab_title(&self) -> String {
+        match &self.path {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.display().to_string()),
+            None => "untitled".into(),
+        }
+    }
+
+    /// Insere texto na posição do caret (substitui seleção se houver).
+    pub fn insert_text(&mut self, text: &str) -> Result<(), DocumentError> {
+        if !self.selection.is_empty() {
+            self.delete_selection()?;
+        }
+        let at = self.selection.head;
+        self.buffer.insert(at, text)?;
+        self.undo.push_applied(Edit::Insert {
+            at,
+            text: text.to_string(),
+        });
+        let new_head = ByteOffset::new(at.as_usize() + text.len());
+        self.selection = Selection::caret(new_head);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Apaga a seleção atual, ou o caractere anterior se vazia (backspace).
+    pub fn backspace(&mut self) -> Result<(), DocumentError> {
+        if !self.selection.is_empty() {
+            return self.delete_selection();
+        }
+        let head = self.selection.head.as_usize();
+        if head == 0 {
+            return Ok(());
+        }
+        // Apaga um char UTF-8 anterior
+        let text = self.buffer.as_string();
+        let prev = prev_char_boundary(&text, head);
+        let start = ByteOffset::new(prev);
+        let end = ByteOffset::new(head);
+        let removed = self.buffer.delete_range(start, end)?;
+        self.undo.push_applied(Edit::Delete {
+            at: start,
+            text: removed,
+        });
+        self.selection = Selection::caret(start);
+        self.dirty = true;
+        Ok(())
+    }
+
+    pub fn delete_selection(&mut self) -> Result<(), DocumentError> {
+        if self.selection.is_empty() {
+            return Ok(());
+        }
+        let start = self.selection.start();
+        let end = self.selection.end();
+        let removed = self.buffer.delete_range(start, end)?;
+        self.undo.push_applied(Edit::Delete {
+            at: start,
+            text: removed,
+        });
+        self.selection = Selection::caret(start);
+        self.dirty = true;
+        Ok(())
+    }
+
+    pub fn undo(&mut self) -> bool {
+        let changed = self.undo.undo(&mut self.buffer);
+        if changed {
+            self.dirty = true;
+            let len = self.buffer.len_bytes();
+            let head = self.selection.head.as_usize().min(len);
+            self.selection = Selection::caret(ByteOffset::new(head));
+        }
+        changed
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let changed = self.redo_inner();
+        if changed {
+            self.dirty = true;
+            let len = self.buffer.len_bytes();
+            let head = self.selection.head.as_usize().min(len);
+            self.selection = Selection::caret(ByteOffset::new(head));
+        }
+        changed
+    }
+
+    fn redo_inner(&mut self) -> bool {
+        self.undo.redo(&mut self.buffer)
+    }
+
+    pub fn commit_edit_group(&mut self) {
+        self.undo.commit_group();
+    }
+
+    /// Marca limpo após save bem-sucedido.
+    pub fn mark_saved(&mut self) {
+        self.undo.commit_group();
+        self.dirty = false;
+    }
+
+    pub fn set_path(&mut self, path: PathBuf) {
+        self.path = Some(path);
+    }
+
+    /// Serializa o buffer para disco no path atual ou `path` fornecido.
+    pub fn save_to(&mut self, path: Option<&Path>) -> Result<(), DocumentError> {
+        let target = match path {
+            Some(p) => p.to_path_buf(),
+            None => self.path.clone().ok_or_else(|| {
+                DocumentError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "document has no path; provide one to save",
+                ))
+            })?,
+        };
+        std::fs::write(&target, self.buffer.as_string())?;
+        self.path = Some(target);
+        self.mark_saved();
+        Ok(())
+    }
+}
+
+/// Coleção de documentos abertos + tab ativa.
+#[derive(Debug, Default)]
+pub struct DocumentStore {
+    next_id: u64,
+    docs: Vec<Document>,
+    active: Option<DocumentId>,
+}
+
+impl DocumentStore {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn alloc_id(&mut self) -> DocumentId {
+        let id = DocumentId(self.next_id);
+        self.next_id += 1;
+        id
+    }
+
+    /// Buffer vazio sem path.
+    pub fn open_empty(&mut self) -> DocumentId {
+        let id = self.alloc_id();
+        self.docs.push(Document {
+            id,
+            path: None,
+            buffer: Buffer::new(),
+            selection: Selection::default(),
+            undo: UndoStack::new(),
+            dirty: false,
+        });
+        self.active = Some(id);
+        id
+    }
+
+    /// Abre arquivo do disco (UTF-8).
+    pub fn open_path(&mut self, path: impl AsRef<Path>) -> Result<DocumentId, DocumentError> {
+        let path = path.as_ref();
+        let text = std::fs::read_to_string(path)?;
+        let id = self.alloc_id();
+        self.docs.push(Document {
+            id,
+            path: Some(path.to_path_buf()),
+            buffer: Buffer::from_text(&text),
+            selection: Selection::default(),
+            undo: UndoStack::new(),
+            dirty: false,
+        });
+        self.active = Some(id);
+        Ok(id)
+    }
+
+    #[must_use]
+    pub fn active_id(&self) -> Option<DocumentId> {
+        self.active
+    }
+
+    pub fn set_active(&mut self, id: DocumentId) -> Result<(), DocumentError> {
+        if !self.docs.iter().any(|d| d.id == id) {
+            return Err(DocumentError::NotFound(id));
+        }
+        self.active = Some(id);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn get(&self, id: DocumentId) -> Option<&Document> {
+        self.docs.iter().find(|d| d.id == id)
+    }
+
+    pub fn get_mut(&mut self, id: DocumentId) -> Option<&mut Document> {
+        self.docs.iter_mut().find(|d| d.id == id)
+    }
+
+    pub fn active(&self) -> Result<&Document, DocumentError> {
+        let id = self.active.ok_or(DocumentError::NoActiveDocument)?;
+        self.get(id).ok_or(DocumentError::NotFound(id))
+    }
+
+    pub fn active_mut(&mut self) -> Result<&mut Document, DocumentError> {
+        let id = self.active.ok_or(DocumentError::NoActiveDocument)?;
+        // borrow checker: find index
+        let idx = self
+            .docs
+            .iter()
+            .position(|d| d.id == id)
+            .ok_or(DocumentError::NotFound(id))?;
+        Ok(&mut self.docs[idx])
+    }
+
+    /// Ordem das tabs.
+    #[must_use]
+    pub fn tab_ids(&self) -> Vec<DocumentId> {
+        self.docs.iter().map(|d| d.id).collect()
+    }
+
+    /// Fecha tab. Retorna se o doc estava dirty (chamador deve confirmar).
+    pub fn close(&mut self, id: DocumentId) -> Result<bool, DocumentError> {
+        let idx = self
+            .docs
+            .iter()
+            .position(|d| d.id == id)
+            .ok_or(DocumentError::NotFound(id))?;
+        let dirty = self.docs[idx].dirty;
+        self.docs.remove(idx);
+        if self.active == Some(id) {
+            self.active = self.docs.last().map(|d| d.id);
+        }
+        Ok(dirty)
+    }
+}
+
+fn prev_char_boundary(text: &str, byte_idx: usize) -> usize {
+    if byte_idx == 0 {
+        return 0;
+    }
+    let mut i = byte_idx - 1;
+    while i > 0 && !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_and_undo_through_document() {
+        let mut store = DocumentStore::new();
+        let id = store.open_empty();
+        {
+            let doc = store.get_mut(id).unwrap();
+            doc.insert_text("abc").unwrap();
+            assert_eq!(doc.buffer().as_string(), "abc");
+            assert!(doc.is_dirty());
+            doc.commit_edit_group();
+            assert!(doc.undo());
+            assert_eq!(doc.buffer().as_string(), "");
+        }
+    }
+
+    #[test]
+    fn backspace_utf8() {
+        let mut store = DocumentStore::new();
+        let id = store.open_empty();
+        let doc = store.get_mut(id).unwrap();
+        doc.insert_text("a✨b").unwrap();
+        doc.backspace().unwrap();
+        assert_eq!(doc.buffer().as_string(), "a✨");
+        doc.backspace().unwrap();
+        assert_eq!(doc.buffer().as_string(), "a");
+    }
+
+    #[test]
+    fn multi_tab_active() {
+        let mut store = DocumentStore::new();
+        let a = store.open_empty();
+        let b = store.open_empty();
+        assert_eq!(store.active_id(), Some(b));
+        store.set_active(a).unwrap();
+        assert_eq!(store.active_id(), Some(a));
+        assert_eq!(store.tab_ids().len(), 2);
+    }
+}
