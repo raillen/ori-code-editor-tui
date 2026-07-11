@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+### Added
+
+- **P2** — tree-sitter syntax highlight for `.oris`, Markdown, HTML, CSS, JavaScript
+- Crate `oride-syntax` + vendored `tree-sitter-oriscript`
+- Language id in status line; syntax colors on editor viewport
+
 ## 0.1.0-alpha.2
 
 ### Added

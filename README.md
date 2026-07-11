@@ -5,7 +5,7 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.2`** — Phase **P1**: mini IDE shell (tree, tabs, terminal, palette).  
+Status: **`0.1.0-alpha.3`** — Phase **P2**: tree-sitter syntax highlight (`.oris`, md, html, css, js).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
 Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md).
 
@@ -14,10 +14,10 @@ Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/co
 - Multi-tab editor with undo/redo
 - Project tree (create files/folders) + icons (Nerd Fonts)
 - Embedded terminal (toggle with keyboard)
-- Syntax highlight: `.oris`, `.md`, `.html`, `.css`, `.js`
+- **Syntax highlight (tree-sitter):** `.oris`, `.md`, `.html`, `.css`, `.js`
 - Config / keymaps / themes via **TOML**
-- OriScript intelligence via `oriscript lsp` (PATH)
-- Command palette, fuzzy open, find/replace, git status in tree
+- OriScript intelligence via `oriscript lsp` (PATH) — planned P3
+- Command palette, fuzzy open, git status in tree
 
 ## Build & run
 
@@ -80,6 +80,8 @@ crates/
   oride-fs/       # project tree, create file/dir, icons
   oride-git/      # git status porcelain for tree badges
   oride-terminal/ # embedded PTY panel
+  oride-syntax/   # tree-sitter highlight engine
+  tree-sitter-oriscript/  # vendored OriScript grammar
   oride-ui/       # ratatui widgets
   oride-app/      # composition + event loop
   oride/          # binary CLI

@@ -49,7 +49,7 @@ cargo test --workspace
 | Fase | Foco |
 |------|------|
 | P0 | core + TUI + config/keymap/theme |
-| P1 | **tabs, árvore, terminal, palette (alpha.2)** |
-| P2 | tree-sitter + linguagens nativas |
+| P1 | tabs, árvore, terminal, palette (alpha.2) |
+| P2 | **tree-sitter highlight (alpha.3)** |
 | P3 | LSP OriScript |
 | P4 | polimento 0.1 |

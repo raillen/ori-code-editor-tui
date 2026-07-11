@@ -1,0 +1,299 @@
+[
+  {
+    "type": "constant_builtin",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "constant_builtin",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "operator",
+          "named": true
+        },
+        {
+          "type": "punctuation",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        },
+        {
+          "type": "type_builtin",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "type_builtin",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "alias",
+    "named": false
+  },
+  {
+    "type": "and",
+    "named": false
+  },
+  {
+    "type": "apply",
+    "named": false
+  },
+  {
+    "type": "as",
+    "named": false
+  },
+  {
+    "type": "block_comment",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "bool",
+    "named": false
+  },
+  {
+    "type": "break",
+    "named": false
+  },
+  {
+    "type": "by",
+    "named": false
+  },
+  {
+    "type": "bytes",
+    "named": false
+  },
+  {
+    "type": "case",
+    "named": false
+  },
+  {
+    "type": "const",
+    "named": false
+  },
+  {
+    "type": "continue",
+    "named": false
+  },
+  {
+    "type": "decimal",
+    "named": false
+  },
+  {
+    "type": "do",
+    "named": false
+  },
+  {
+    "type": "elif",
+    "named": false
+  },
+  {
+    "type": "else",
+    "named": false
+  },
+  {
+    "type": "end",
+    "named": false
+  },
+  {
+    "type": "enum",
+    "named": false
+  },
+  {
+    "type": "error",
+    "named": false
+  },
+  {
+    "type": "false",
+    "named": false
+  },
+  {
+    "type": "float",
+    "named": false
+  },
+  {
+    "type": "for",
+    "named": false
+  },
+  {
+    "type": "identifier",
+    "named": true
+  },
+  {
+    "type": "if",
+    "named": false
+  },
+  {
+    "type": "import",
+    "named": false
+  },
+  {
+    "type": "imports",
+    "named": false
+  },
+  {
+    "type": "in",
+    "named": false
+  },
+  {
+    "type": "int",
+    "named": false
+  },
+  {
+    "type": "line_comment",
+    "named": true,
+    "extra": true
+  },
+  {
+    "type": "list",
+    "named": false
+  },
+  {
+    "type": "loop",
+    "named": false
+  },
+  {
+    "type": "map",
+    "named": false
+  },
+  {
+    "type": "match",
+    "named": false
+  },
+  {
+    "type": "module",
+    "named": false
+  },
+  {
+    "type": "none",
+    "named": false
+  },
+  {
+    "type": "not",
+    "named": false
+  },
+  {
+    "type": "number",
+    "named": true
+  },
+  {
+    "type": "of",
+    "named": false
+  },
+  {
+    "type": "operator",
+    "named": true
+  },
+  {
+    "type": "optional",
+    "named": false
+  },
+  {
+    "type": "or",
+    "named": false
+  },
+  {
+    "type": "pub",
+    "named": false
+  },
+  {
+    "type": "punctuation",
+    "named": true
+  },
+  {
+    "type": "range",
+    "named": false
+  },
+  {
+    "type": "repeat",
+    "named": false
+  },
+  {
+    "type": "result",
+    "named": false
+  },
+  {
+    "type": "return",
+    "named": false
+  },
+  {
+    "type": "some",
+    "named": false
+  },
+  {
+    "type": "string",
+    "named": false
+  },
+  {
+    "type": "string",
+    "named": true
+  },
+  {
+    "type": "struct",
+    "named": false
+  },
+  {
+    "type": "success",
+    "named": false
+  },
+  {
+    "type": "times",
+    "named": false
+  },
+  {
+    "type": "true",
+    "named": false
+  },
+  {
+    "type": "try",
+    "named": false
+  },
+  {
+    "type": "using",
+    "named": false
+  },
+  {
+    "type": "var",
+    "named": false
+  },
+  {
+    "type": "void",
+    "named": false
+  },
+  {
+    "type": "while",
+    "named": false
+  }
+]

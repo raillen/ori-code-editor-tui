@@ -7,6 +7,8 @@ members = [
     "crates/oride-fs",
     "crates/oride-git",
     "crates/oride-terminal",
+    "crates/oride-syntax",
+    "crates/tree-sitter-oriscript",
     "crates/oride-ui",
     "crates/oride-app",
     "crates/oride",
@@ -14,7 +16,7 @@ members = [
 default-members = ["crates/oride"]
 
 [workspace.package]
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/raillen/ori-code-editor-tui"
@@ -28,8 +30,10 @@ oride-keymap = { path = "crates/oride-keymap" }
 oride-fs = { path = "crates/oride-fs" }
 oride-git = { path = "crates/oride-git" }
 oride-terminal = { path = "crates/oride-terminal" }
+oride-syntax = { path = "crates/oride-syntax" }
 oride-ui = { path = "crates/oride-ui" }
 oride-app = { path = "crates/oride-app" }
+tree-sitter-oriscript = { path = "crates/tree-sitter-oriscript" }
 ropey = "1.6"
 thiserror = "2"
 anyhow = "1"
@@ -41,3 +45,8 @@ dirs = "6"
 tempfile = "3"
 portable-pty = "0.8"
 strip-ansi-escapes = "0.2"
+tree-sitter = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.25"
+tree-sitter-md = "0.3"

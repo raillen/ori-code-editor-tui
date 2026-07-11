@@ -1,6 +1,7 @@
-//! Viewport do buffer com gutter de números de linha e caret.
+//! Viewport do buffer com gutter, caret e syntax highlight.
 
 use oride_core::{Buffer, Caret};
+use oride_syntax::{line_spans, HighlightSpan};
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
@@ -15,6 +16,8 @@ pub struct EditorView<'a> {
     /// Primeira linha visível (0-based).
     pub scroll_y: usize,
     pub show_line_numbers: bool,
+    /// Spans de highlight do documento inteiro (bytes).
+    pub highlights: &'a [HighlightSpan],
 }
 
 pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme: &UiTheme) {
@@ -44,6 +47,12 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
         }
 
         let content = view.buffer.line_text(line_idx).unwrap_or_default();
+        let line_byte = view
+            .buffer
+            .line_to_byte(line_idx)
+            .map(|o| o.as_usize())
+            .unwrap_or(0);
+
         let gutter_span = if gutter > 0 {
             let num = format!(
                 "{:>width$} ",
@@ -61,13 +70,20 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
         if is_cursor_line {
             spans.extend(paint_line_with_cursor(
                 &content,
+                line_byte,
                 view.caret.column,
                 text_width,
+                view.highlights,
                 theme,
             ));
         } else {
-            let visible = truncate_to_width(&content, text_width);
-            spans.push(Span::styled(visible, theme.editor_style()));
+            spans.extend(paint_highlighted_line(
+                &content,
+                line_byte,
+                text_width,
+                view.highlights,
+                theme,
+            ));
         }
 
         lines.push(Line::from(spans));
@@ -77,54 +93,83 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
     frame.render_widget(widget, area);
 }
 
-fn paint_line_with_cursor(
+fn paint_highlighted_line(
     content: &str,
-    column: usize,
+    line_byte: usize,
     text_width: usize,
+    highlights: &[HighlightSpan],
     theme: &UiTheme,
 ) -> Vec<Span<'static>> {
-    let chars: Vec<char> = content.chars().collect();
-    let col = column.min(chars.len());
-
-    // Scroll horizontal simples: se caret passa da largura, desloca
-    let hscroll = col.saturating_sub(text_width.saturating_sub(1));
-    let end = (hscroll + text_width).min(chars.len());
-    let slice = &chars[hscroll..end];
-
+    let visible = truncate_to_width(content, text_width);
+    // Recorta highlights ao prefixo visível (sem hscroll em linhas sem caret)
+    let segs = line_spans(&visible, line_byte, highlights);
     let mut spans = Vec::new();
-    let cursor_in_view = col >= hscroll && col - hscroll < text_width;
-
-    if cursor_in_view {
-        let local = col - hscroll;
-        let before: String = slice.iter().take(local).collect();
-        let at = slice.get(local).copied();
-        let after: String = slice.iter().skip(local + 1).collect();
-
-        if !before.is_empty() {
-            spans.push(Span::styled(before, theme.editor_style()));
+    let mut painted = 0usize;
+    for (text, kind) in segs {
+        if painted >= text_width {
+            break;
         }
-        let cursor_ch = at.map(|c| c.to_string()).unwrap_or_else(|| " ".into());
-        spans.push(Span::styled(cursor_ch, theme.cursor_style()));
-        if !after.is_empty() {
-            spans.push(Span::styled(after, theme.editor_style()));
-        }
-        if at.is_none() {
-            // caret no fim da linha: já pintamos espaço
-        }
-    } else {
-        let visible: String = slice.iter().collect();
-        spans.push(Span::styled(visible, theme.editor_style()));
+        let remain = text_width - painted;
+        let chunk: String = text.chars().take(remain).collect();
+        painted += chunk.chars().count();
+        spans.push(Span::styled(chunk, theme.syntax_style(kind)));
     }
-
-    // Completa largura visual restante com espaços (fundo)
-    let painted: usize = spans.iter().map(|s| s.content.chars().count()).sum();
     if painted < text_width {
         spans.push(Span::styled(
             " ".repeat(text_width - painted),
             theme.editor_style(),
         ));
     }
+    if spans.is_empty() {
+        spans.push(Span::styled(" ".repeat(text_width), theme.editor_style()));
+    }
+    spans
+}
 
+fn paint_line_with_cursor(
+    content: &str,
+    line_byte: usize,
+    column: usize,
+    text_width: usize,
+    highlights: &[HighlightSpan],
+    theme: &UiTheme,
+) -> Vec<Span<'static>> {
+    let chars: Vec<char> = content.chars().collect();
+    let col = column.min(chars.len());
+    let hscroll = col.saturating_sub(text_width.saturating_sub(1));
+    let end = (hscroll + text_width).min(chars.len());
+    let slice: String = chars[hscroll..end].iter().collect();
+
+    // Byte offset do início da fatia visível
+    let scroll_bytes: usize = chars.iter().take(hscroll).map(|c| c.len_utf8()).sum();
+    let slice_start = line_byte + scroll_bytes;
+
+    let segs = line_spans(&slice, slice_start, highlights);
+    let cursor_local = col.saturating_sub(hscroll);
+
+    let mut spans = Vec::new();
+    let mut char_pos = 0usize;
+    for (text, kind) in segs {
+        for ch in text.chars() {
+            if char_pos == cursor_local {
+                spans.push(Span::styled(ch.to_string(), theme.cursor_style()));
+            } else {
+                spans.push(Span::styled(ch.to_string(), theme.syntax_style(kind)));
+            }
+            char_pos += 1;
+        }
+    }
+    // Caret no fim da linha
+    if cursor_local >= char_pos {
+        spans.push(Span::styled(" ".to_string(), theme.cursor_style()));
+        char_pos += 1;
+    }
+    if char_pos < text_width {
+        spans.push(Span::styled(
+            " ".repeat(text_width - char_pos),
+            theme.editor_style(),
+        ));
+    }
     spans
 }
 
@@ -140,5 +185,13 @@ mod tests {
     fn truncate_respects_char_count() {
         assert_eq!(truncate_to_width("abcdef", 3), "abc");
         assert_eq!(truncate_to_width("✨x", 1), "✨");
+    }
+
+    #[test]
+    fn paint_empty_line_fills_width() {
+        let theme = UiTheme::default();
+        let spans = paint_highlighted_line("", 0, 10, &[], &theme);
+        let w: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+        assert_eq!(w, 10);
     }
 }

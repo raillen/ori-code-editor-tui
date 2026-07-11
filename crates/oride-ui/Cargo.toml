@@ -11,5 +11,6 @@ oride-core = { workspace = true }
 oride-config = { workspace = true }
 oride-fs = { workspace = true }
 oride-git = { workspace = true }
+oride-syntax = { workspace = true }
 ratatui = { workspace = true }
 thiserror = { workspace = true }

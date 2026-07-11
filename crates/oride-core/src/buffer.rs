@@ -63,6 +63,12 @@ impl Buffer {
         Ok(line_content_without_eol(&owned).to_string())
     }
 
+    /// Byte offset do início da linha (0-based).
+    pub fn line_to_byte(&self, line: usize) -> Result<ByteOffset, BufferError> {
+        self.ensure_line(line)?;
+        Ok(ByteOffset::new(self.rope.line_to_byte(line)))
+    }
+
     pub fn byte_to_caret(&self, offset: ByteOffset) -> Result<Caret, BufferError> {
         self.ensure_offset_boundary(offset)?;
         let line = self.rope.byte_to_line(offset.as_usize());

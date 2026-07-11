@@ -10,6 +10,7 @@ use oride_core::{DocumentError, DocumentId, DocumentStore};
 use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
 use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
+use oride_syntax::{detect_language, HighlightEngine};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
     render_editor, render_palette, render_status, render_tabs, render_terminal_panel, render_tree,
@@ -71,6 +72,7 @@ pub struct App {
     terminal: Option<EmbeddedTerminal>,
     overlay: Overlay,
     file_index: Vec<PathBuf>,
+    highlight: HighlightEngine,
 }
 
 impl App {
@@ -145,6 +147,7 @@ impl App {
             terminal,
             overlay: Overlay::None,
             file_index,
+            highlight: HighlightEngine::new(),
         }
     }
 
@@ -874,6 +877,13 @@ impl App {
         self.last_editor_height = editor_area.height as usize;
         self.ensure_cursor_visible();
 
+        // Atualiza syntax highlight a partir do buffer ativo
+        let (lang, source) = match self.store.active() {
+            Ok(d) => (detect_language(d.path()), d.buffer().as_string()),
+            Err(_) => return,
+        };
+        self.highlight.update(lang, &source);
+
         let doc = match self.store.active() {
             Ok(d) => d,
             Err(_) => return,
@@ -884,6 +894,7 @@ impl App {
             caret,
             scroll_y: self.scroll_y,
             show_line_numbers: self.show_line_numbers,
+            highlights: self.highlight.spans(),
         };
         render_editor(frame, editor_area, &view, &self.theme);
     }
@@ -903,10 +914,11 @@ impl App {
             Focus::Tree => "tree",
             Focus::Terminal => "term",
         };
+        let lang = self.highlight.language().as_str();
         let mut message = self.status_message.clone();
         if message.is_none() {
             message = Some(format!(
-                "{focus}{branch} · Ctrl+P file · Ctrl+Shift+P cmd · Ctrl+B tree · Ctrl+` term"
+                "{focus} · {lang}{branch} · Ctrl+P file · Ctrl+Shift+P cmd · Ctrl+B tree · Ctrl+` term"
             ));
         }
         let status = StatusModel {

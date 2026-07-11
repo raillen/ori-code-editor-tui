@@ -1,0 +1,18 @@
+[package]
+name = "oride-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tree-sitter syntax highlighting for Oride"
+rust-version.workspace = true
+
+[dependencies]
+tree-sitter = { workspace = true }
+tree-sitter-oriscript = { workspace = true }
+tree-sitter-javascript = { workspace = true }
+tree-sitter-html = { workspace = true }
+tree-sitter-css = { workspace = true }
+tree-sitter-md = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
