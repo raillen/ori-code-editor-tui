@@ -4,6 +4,7 @@ use tree_sitter::{Parser, Tree};
 
 use crate::kind::HighlightKind;
 use crate::language::LanguageId;
+use crate::markdown;
 
 /// Intervalo semi-aberto `[start, end)` em bytes UTF-8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +67,13 @@ impl HighlightEngine {
         if self.language == LanguageId::Plain || self.source.is_empty() {
             return;
         }
+
+        // Markdown (e MDX) usam pipeline block+inline dedicado
+        if self.language.is_markdown_family() {
+            self.spans = markdown::collect_markdown_spans(&self.source);
+            return;
+        }
+
         let lang = match language_ts(self.language) {
             Some(l) => l,
             None => return,
@@ -78,7 +86,6 @@ impl HighlightEngine {
             None => return,
         };
         collect_spans(tree.root_node(), &self.source, &mut self.spans);
-        // Preferir spans menores (folhas) quando sobrepõem: ordenar por start, depois por comprimento asc
         self.spans.sort_by(|a, b| {
             a.start
                 .cmp(&b.start)
@@ -90,21 +97,18 @@ impl HighlightEngine {
 
 fn language_ts(id: LanguageId) -> Option<tree_sitter::Language> {
     let lang = match id {
-        LanguageId::Plain => return None,
+        LanguageId::Plain | LanguageId::Markdown | LanguageId::Mdx => return None,
         LanguageId::OriScript => tree_sitter_oriscript::LANGUAGE.into(),
         LanguageId::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
         LanguageId::Html => tree_sitter_html::LANGUAGE.into(),
         LanguageId::Css => tree_sitter_css::LANGUAGE.into(),
-        LanguageId::Markdown => tree_sitter_md::LANGUAGE.into(),
     };
     Some(lang)
 }
 
 fn collect_spans(node: tree_sitter::Node, source: &str, out: &mut Vec<HighlightSpan>) {
-    // Visita nós nomeados; se tem kind mapeável e é “folha nomeada” ou tem texto direto, emite.
     if node.is_named() {
         if let Some(kind) = HighlightKind::from_node_kind(node.kind()) {
-            // Só emite se não tem filho nomeado (preferir folhas) ou é token-like
             let mut cursor = node.walk();
             let has_named_child = node.named_children(&mut cursor).next().is_some();
             if !has_named_child || is_token_like(node.kind()) {
@@ -142,46 +146,37 @@ fn is_token_like(kind: &str) -> bool {
     ) || kind.len() == 1
 }
 
-/// Fatias de uma linha (byte range da linha no source) → segmentos (texto, kind).
-/// `line_start`/`line_end` em bytes no source global; `line_text` sem `\n`.
+/// Fatias de uma linha → segmentos (texto, kind).
 #[must_use]
 pub fn line_spans<'a>(
     line_text: &'a str,
     line_start: usize,
     highlights: &[HighlightSpan],
 ) -> Vec<(&'a str, HighlightKind)> {
-    let line_end = line_start + line_text.len();
     if line_text.is_empty() {
         return vec![];
     }
 
-    // Eventos de mudança de kind
-    let mut cuts: Vec<(usize, Option<HighlightKind>)> = vec![(0, None)];
+    let mut cuts: Vec<usize> = vec![0, line_text.len()];
     for h in highlights {
-        if h.end <= line_start || h.start >= line_end {
+        if h.end <= line_start || h.start >= line_start + line_text.len() {
             continue;
         }
         let s = h.start.saturating_sub(line_start).min(line_text.len());
         let e = h.end.saturating_sub(line_start).min(line_text.len());
         if s < e {
-            cuts.push((s, Some(h.kind)));
-            cuts.push((e, None));
+            cuts.push(s);
+            cuts.push(e);
         }
     }
-    cuts.push((line_text.len(), None));
-    cuts.sort_by_key(|(o, _)| *o);
-
-    // Resolve kind em cada offset: última highlight ativa
-    // Abordagem simples: para cada segmento entre cuts únicos, pega o highlight mais específico cobrindo o mid
-    let mut points: Vec<usize> = cuts.iter().map(|(o, _)| *o).collect();
-    points.sort_unstable();
-    points.dedup();
+    cuts.sort_unstable();
+    cuts.dedup();
 
     let mut out = Vec::new();
-    for w in points.windows(2) {
+    for w in cuts.windows(2) {
         let a = w[0];
         let b = w[1];
-        if a >= b {
+        if a >= b || !line_text.is_char_boundary(a) || !line_text.is_char_boundary(b) {
             continue;
         }
         let mid = a + (b - a) / 2;
@@ -192,33 +187,9 @@ pub fn line_spans<'a>(
             .min_by_key(|h| h.end - h.start)
             .map(|h| h.kind)
             .unwrap_or(HighlightKind::Normal);
-        // boundary safe split
-        if !line_text.is_char_boundary(a) || !line_text.is_char_boundary(b) {
-            continue;
-        }
         out.push((&line_text[a..b], kind));
     }
-
-    // Merge adjacents same kind
-    let mut merged: Vec<(&str, HighlightKind)> = Vec::new();
-    for (text, kind) in out {
-        if let Some(last) = merged.last_mut() {
-            if last.1 == kind {
-                // cannot extend &str easily without indices — push separate ok
-                // For display, adjacent same-kind spans are fine
-            }
-        }
-        if text.is_empty() {
-            continue;
-        }
-        if let Some(last) = merged.last_mut() {
-            if last.1 == kind {
-                // skip merge of str slices; keep separate
-            }
-        }
-        merged.push((text, kind));
-    }
-    merged
+    out
 }
 
 #[cfg(test)]
@@ -245,6 +216,30 @@ mod tests {
         let mut eng = HighlightEngine::new();
         eng.update(LanguageId::JavaScript, "const x = \"hi\"; // c\n");
         assert!(eng.spans().iter().any(|s| s.kind == HighlightKind::String));
+    }
+
+    #[test]
+    fn highlights_markdown_document() {
+        let mut eng = HighlightEngine::new();
+        eng.update(
+            LanguageId::Markdown,
+            "# Hi\n\n**bold** `code`\n\n- a\n\n[link](https://x.dev)\n",
+        );
+        assert!(!eng.spans().is_empty());
+        let kinds: Vec<_> = eng.spans().iter().map(|s| s.kind).collect();
+        assert!(
+            kinds.iter().any(|k| matches!(
+                k,
+                HighlightKind::Heading
+                    | HighlightKind::Strong
+                    | HighlightKind::Code
+                    | HighlightKind::ListMarker
+                    | HighlightKind::Link
+                    | HighlightKind::Keyword
+                    | HighlightKind::String
+            )),
+            "kinds={kinds:?}"
+        );
     }
 
     #[test]

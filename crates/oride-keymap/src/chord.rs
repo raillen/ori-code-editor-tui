@@ -20,10 +20,7 @@ impl KeyChord {
         let mut shift = key.modifiers.contains(KeyModifiers::SHIFT);
         let code = match key.code {
             KeyCode::Char(c) => {
-                // Ctrl+Shift+S e Ctrl+S normalizam para o mesmo char lower
-                // quando não precisamos distinguir (bindings usam lower).
                 let lower = c.to_ascii_lowercase();
-                // Em muitos terminais, Ctrl+Shift ainda reporta só CONTROL.
                 if c.is_ascii_uppercase() {
                     shift = true;
                 }
@@ -31,13 +28,9 @@ impl KeyChord {
             }
             other => other,
         };
-        // Char com shift para letras: se for só letter input, shift no chord
-        // de "S" sem ctrl vira insert — tratado fora do keymap.
         if matches!(code, KeyCode::Char(_)) && !ctrl && !alt {
-            // Digitação normal não é chord de comando
             shift = key.modifiers.contains(KeyModifiers::SHIFT);
         }
-        // Evita shift residual em setas? setas usam shift para extend.
         if matches!(
             code,
             KeyCode::Left
@@ -48,10 +41,16 @@ impl KeyChord {
                 | KeyCode::End
                 | KeyCode::PageUp
                 | KeyCode::PageDown
+                | KeyCode::F(_)
         ) {
             shift = key.modifiers.contains(KeyModifiers::SHIFT);
             ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         }
+        // Alguns terminais enviam Ctrl+/ como Char('?') ou Char('_') — normaliza common case
+        let code = match (ctrl, code) {
+            (true, KeyCode::Char('?')) => KeyCode::Char('/'),
+            _ => code,
+        };
         Self {
             ctrl,
             alt,
@@ -138,6 +137,7 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "f5" => KeyCode::F(5),
         "`" | "grave" | "backtick" => KeyCode::Char('`'),
         "\\" | "backslash" => KeyCode::Char('\\'),
+        "/" | "slash" => KeyCode::Char('/'),
         s if s.chars().count() == 1 => {
             let c = s.chars().next().unwrap();
             KeyCode::Char(c)

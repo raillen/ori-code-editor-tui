@@ -7,14 +7,15 @@ HTML, CSS, and JavaScript.
 
 Status: **`0.1.0-alpha.3`** — Phase **P2**: tree-sitter syntax highlight (`.oris`, md, html, css, js).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
-Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md).
+Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md) · Markdown: [`docs/markdown.md`](docs/markdown.md).
 
 ## Goals (0.1 “mini IDE”)
 
 - Multi-tab editor with undo/redo
 - Project tree (create files/folders) + icons (Nerd Fonts)
 - Embedded terminal (toggle with keyboard)
-- **Syntax highlight (tree-sitter):** `.oris`, `.md`, `.html`, `.css`, `.js`
+- **Syntax highlight (tree-sitter):** `.oris`, Markdown (+ derivados/MDX), `.html`, `.css`, `.js`
+- **Markdown:** soft wrap, comment `<!-- -->`, continuação de listas, highlight rico
 - Config / keymaps / themes via **TOML**
 - OriScript intelligence via `oriscript lsp` (PATH) — planned P3
 - Command palette, fuzzy open, git status in tree
@@ -50,6 +51,8 @@ cargo build --release
 | `Ctrl+Shift+P` | Command palette |
 | `Ctrl+Shift+N` / `Ctrl+Shift+F` | New file / folder (tree) |
 | `F5` | Refresh tree + git |
+| `Alt+Z` | Toggle soft wrap (default on for Markdown) |
+| `Ctrl+/` | Toggle line comment (`<!-- -->` in MD) |
 | `Esc` or `Ctrl+Q` | Close overlay / unfocus / quit (2× if dirty) |
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  

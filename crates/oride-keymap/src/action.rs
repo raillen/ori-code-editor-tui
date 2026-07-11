@@ -52,6 +52,10 @@ pub enum Action {
     OpenFolder,
     /// Alterna foco entre editor e árvore (sem esconder o painel).
     FocusToggleTreeEditor,
+    /// Soft wrap (quebra visual de linha).
+    ToggleSoftWrap,
+    /// Comenta/descomenta linha(s) conforme a linguagem.
+    ToggleComment,
 }
 
 impl Action {
@@ -91,6 +95,8 @@ impl Action {
             Self::TreeRefresh => "Refresh tree",
             Self::OpenFolder => "Open folder…",
             Self::FocusToggleTreeEditor => "Focus: toggle tree / editor",
+            Self::ToggleSoftWrap => "Toggle soft wrap",
+            Self::ToggleComment => "Toggle comment",
         }
     }
 
@@ -105,6 +111,8 @@ impl Action {
             Action::NextTab,
             Action::PrevTab,
             Action::OpenFolder,
+            Action::ToggleSoftWrap,
+            Action::ToggleComment,
             Action::ToggleTree,
             Action::ToggleTerminal,
             Action::FocusTree,
@@ -165,6 +173,8 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "tree_refresh" => Action::TreeRefresh,
         "open_folder" => Action::OpenFolder,
         "focus_toggle_tree_editor" => Action::FocusToggleTreeEditor,
+        "toggle_soft_wrap" => Action::ToggleSoftWrap,
+        "toggle_comment" => Action::ToggleComment,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)

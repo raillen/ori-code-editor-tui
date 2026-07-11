@@ -7,6 +7,12 @@
 - **P2** — tree-sitter syntax highlight for `.oris`, Markdown, HTML, CSS, JavaScript
 - Crate `oride-syntax` + vendored `tree-sitter-oriscript`
 - Language id in status line; syntax colors on editor viewport
+- **Markdown rico** — block+inline queries, headings/links/code/lists/quotes
+- Derivados: `.mdx`, `.qmd`, `.rmd`, `.markdown`, README bare, etc.
+- Soft wrap (`Alt+Z`, default on em MD)
+- Toggle comment (`Ctrl+/`, HTML comments em MD)
+- Continuação de listas Markdown no Enter
+- Docs: `docs/markdown.md`
 
 ### Fixed (P2 polish)
 
@@ -14,6 +20,7 @@
 - Atalhos explícitos: `Ctrl+B` foco árvore, `Ctrl+E` foco editor (`Ctrl+Shift+B` oculta painel)
 - Navegação da árvore: ↑↓/jk, ←→/hl, Enter, Space, Home/End
 - `Ctrl+O` / palette “Open folder…” — abrir pasta de projeto no sistema
+- Highlight de seleção da árvore (linha inteira ciano)
 
 ## 0.1.0-alpha.2
 

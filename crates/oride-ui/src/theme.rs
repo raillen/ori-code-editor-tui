@@ -22,6 +22,14 @@ pub struct SyntaxTheme {
     pub property: Color,
     pub tag: Color,
     pub attribute: Color,
+    // Markdown
+    pub heading: Color,
+    pub emphasis: Color,
+    pub strong: Color,
+    pub link: Color,
+    pub code: Color,
+    pub list_marker: Color,
+    pub quote: Color,
 }
 
 impl Default for SyntaxTheme {
@@ -41,6 +49,13 @@ impl Default for SyntaxTheme {
             property: Color::Cyan,
             tag: Color::Red,
             attribute: Color::Yellow,
+            heading: Color::Magenta,
+            emphasis: Color::Cyan,
+            strong: Color::Yellow,
+            link: Color::Blue,
+            code: Color::Green,
+            list_marker: Color::Yellow,
+            quote: Color::DarkGray,
         }
     }
 }
@@ -147,23 +162,41 @@ impl UiTheme {
 
     #[must_use]
     pub fn syntax_style(self, kind: HighlightKind) -> Style {
-        let fg = match kind {
-            HighlightKind::Normal => self.foreground,
-            HighlightKind::Comment => self.syntax.comment,
-            HighlightKind::Keyword => self.syntax.keyword,
-            HighlightKind::String => self.syntax.string,
-            HighlightKind::Number => self.syntax.number,
-            HighlightKind::Type => self.syntax.type_name,
-            HighlightKind::Function => self.syntax.function,
-            HighlightKind::Operator => self.syntax.operator,
-            HighlightKind::Punctuation => self.syntax.punctuation,
-            HighlightKind::Variable => self.syntax.variable,
-            HighlightKind::Constant => self.syntax.constant,
-            HighlightKind::Property => self.syntax.property,
-            HighlightKind::Tag => self.syntax.tag,
-            HighlightKind::Attribute => self.syntax.attribute,
+        use HighlightKind::*;
+        let (fg, bold) = match kind {
+            Normal => (self.foreground, false),
+            Comment => (self.syntax.comment, false),
+            Keyword => (self.syntax.keyword, true),
+            String => (self.syntax.string, false),
+            Number => (self.syntax.number, false),
+            Type => (self.syntax.type_name, false),
+            Function => (self.syntax.function, false),
+            Operator => (self.syntax.operator, false),
+            Punctuation => (self.syntax.punctuation, false),
+            Variable => (self.syntax.variable, false),
+            Constant => (self.syntax.constant, false),
+            Property => (self.syntax.property, false),
+            Tag => (self.syntax.tag, false),
+            Attribute => (self.syntax.attribute, false),
+            Heading => (self.syntax.heading, true),
+            Emphasis => (self.syntax.emphasis, false),
+            Strong => (self.syntax.strong, true),
+            Link => (self.syntax.link, false),
+            Code => (self.syntax.code, false),
+            ListMarker => (self.syntax.list_marker, true),
+            Quote => (self.syntax.quote, false),
         };
-        Style::default().fg(fg).bg(self.background)
+        let mut style = Style::default().fg(fg).bg(self.background);
+        if bold {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        if matches!(kind, Emphasis) {
+            style = style.add_modifier(Modifier::ITALIC);
+        }
+        if matches!(kind, Link) {
+            style = style.add_modifier(Modifier::UNDERLINED);
+        }
+        style
     }
 }
 

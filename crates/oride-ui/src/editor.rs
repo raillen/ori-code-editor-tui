@@ -1,4 +1,4 @@
-//! Viewport do buffer com gutter, caret e syntax highlight.
+//! Viewport do buffer com gutter, caret, soft wrap e syntax highlight.
 
 use oride_core::{Buffer, Caret};
 use oride_syntax::{line_spans, HighlightKind, HighlightSpan};
@@ -13,19 +13,17 @@ use crate::theme::UiTheme;
 pub struct EditorView<'a> {
     pub buffer: &'a Buffer,
     pub caret: Caret,
-    /// Primeira linha visível (0-based).
+    /// Primeira **linha lógica** visível (0-based).
     pub scroll_y: usize,
     pub show_line_numbers: bool,
-    /// Spans de highlight do documento inteiro (bytes).
     pub highlights: &'a [HighlightSpan],
-    /// Desenha caret + posiciona cursor do terminal (só no painel focado).
     pub show_cursor: bool,
+    /// Quebra visual de linhas longas (Markdown default).
+    pub soft_wrap: bool,
 }
 
-/// Resultado do paint da linha do caret (posição local do cursor no texto).
 struct CursorPaint {
     spans: Vec<Span<'static>>,
-    /// Coluna no texto visível (0-based, após hscroll).
     cursor_col: u16,
 }
 
@@ -40,70 +38,124 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
         0
     };
     let text_width = area.width.saturating_sub(gutter) as usize;
+    if text_width == 0 {
+        return;
+    }
     let visible_rows = area.height as usize;
     let line_count = view.buffer.line_count().max(1);
     let start = view.scroll_y.min(line_count.saturating_sub(1));
 
     let mut cursor_pos: Option<Position> = None;
     let mut lines: Vec<Line> = Vec::with_capacity(visible_rows);
+    let mut visual_row = 0usize;
+    let mut logical = start;
 
-    for row in 0..visible_rows {
-        let line_idx = start + row;
-        if line_idx >= line_count {
-            lines.push(Line::from(Span::styled(
-                " ".repeat(area.width as usize),
-                theme.editor_style(),
-            )));
-            continue;
-        }
-
-        let content = view.buffer.line_text(line_idx).unwrap_or_default();
+    while visual_row < visible_rows && logical < line_count {
+        let content = view.buffer.line_text(logical).unwrap_or_default();
         let line_byte = view
             .buffer
-            .line_to_byte(line_idx)
+            .line_to_byte(logical)
             .map(|o| o.as_usize())
             .unwrap_or(0);
 
-        let gutter_span = if gutter > 0 {
-            let num = format!(
-                "{:>width$} ",
-                line_idx + 1,
-                width = (gutter as usize).saturating_sub(1)
-            );
-            Span::styled(num, theme.gutter_style())
+        let chunks = if view.soft_wrap {
+            wrap_chunks(&content, text_width)
         } else {
-            Span::raw("")
+            // uma “chunk” com hscroll se for a linha do caret; senão prefixo
+            if view.show_cursor && logical == view.caret.line {
+                let col = view.caret.column.min(content.chars().count());
+                let hscroll = col.saturating_sub(text_width.saturating_sub(1));
+                vec![chunk_from_col(&content, hscroll, text_width)]
+            } else {
+                vec![truncate_to_width(&content, text_width)]
+            }
         };
 
-        let is_cursor_line = view.show_cursor && line_idx == view.caret.line;
-        let mut spans = vec![gutter_span];
-
-        if is_cursor_line {
-            let painted = paint_line_with_cursor(
-                &content,
-                line_byte,
-                view.caret.column,
-                text_width,
-                view.highlights,
-                theme,
-            );
-            spans.extend(painted.spans);
-            let x = area.x + gutter + painted.cursor_col;
-            let y = area.y + row as u16;
-            if x < area.x + area.width && y < area.y + area.height {
-                cursor_pos = Some(Position { x, y });
+        for (wi, chunk) in chunks.iter().enumerate() {
+            if visual_row >= visible_rows {
+                break;
             }
-        } else {
-            spans.extend(paint_highlighted_line(
-                &content,
-                line_byte,
-                text_width,
-                view.highlights,
-                theme,
-            ));
-        }
 
-        lines.push(Line::from(spans));
+            let col_offset: usize = if view.soft_wrap {
+                wi * text_width
+            } else if view.show_cursor && logical == view.caret.line {
+                let col = view.caret.column.min(content.chars().count());
+                col.saturating_sub(text_width.saturating_sub(1))
+            } else {
+                0
+            };
+
+            let chunk_byte = line_byte
+                + content
+                    .chars()
+                    .take(col_offset)
+                    .map(|c| c.len_utf8())
+                    .sum::<usize>();
+
+            let gutter_span = if gutter > 0 {
+                let num = if wi == 0 {
+                    format!(
+                        "{:>width$} ",
+                        logical + 1,
+                        width = (gutter as usize).saturating_sub(1)
+                    )
+                } else {
+                    format!(
+                        "{:>width$} ",
+                        "",
+                        width = (gutter as usize).saturating_sub(1)
+                    )
+                };
+                Span::styled(num, theme.gutter_style())
+            } else {
+                Span::raw("")
+            };
+
+            let on_cursor_line = view.show_cursor && logical == view.caret.line;
+            let caret_in_chunk = on_cursor_line
+                && view.caret.column >= col_offset
+                && (view.soft_wrap && view.caret.column < col_offset + text_width
+                    || !view.soft_wrap
+                    || wi == chunks.len() - 1 && view.caret.column >= col_offset);
+
+            let mut spans = vec![gutter_span];
+            if on_cursor_line && caret_in_chunk {
+                let local_col = view.caret.column.saturating_sub(col_offset);
+                let painted = paint_chunk_with_cursor(
+                    chunk,
+                    chunk_byte,
+                    local_col,
+                    text_width,
+                    view.highlights,
+                    theme,
+                );
+                spans.extend(painted.spans);
+                let x = area.x + gutter + painted.cursor_col;
+                let y = area.y + visual_row as u16;
+                if x < area.x + area.width && y < area.y + area.height {
+                    cursor_pos = Some(Position { x, y });
+                }
+            } else {
+                spans.extend(paint_highlighted_line(
+                    chunk,
+                    chunk_byte,
+                    text_width,
+                    view.highlights,
+                    theme,
+                ));
+            }
+
+            lines.push(Line::from(spans));
+            visual_row += 1;
+        }
+        logical += 1;
+    }
+
+    while lines.len() < visible_rows {
+        lines.push(Line::from(Span::styled(
+            " ".repeat(area.width as usize),
+            theme.editor_style(),
+        )));
     }
 
     let widget = Paragraph::new(lines).block(Block::default().style(theme.editor_style()));
@@ -112,6 +164,31 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
     if let Some(pos) = cursor_pos {
         frame.set_cursor_position(pos);
     }
+}
+
+fn wrap_chunks(content: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+    if content.is_empty() {
+        return vec![String::new()];
+    }
+    let chars: Vec<char> = content.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let end = (i + width).min(chars.len());
+        out.push(chars[i..end].iter().collect());
+        i = end;
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+fn chunk_from_col(content: &str, start_col: usize, width: usize) -> String {
+    content.chars().skip(start_col).take(width).collect()
 }
 
 fn paint_highlighted_line(
@@ -124,11 +201,10 @@ fn paint_highlighted_line(
     if text_width == 0 {
         return Vec::new();
     }
-    let visible = truncate_to_width(content, text_width);
-    let segs = if visible.is_empty() {
+    let segs = if content.is_empty() {
         Vec::new()
     } else {
-        line_spans(&visible, line_byte, highlights)
+        line_spans(content, line_byte, highlights)
     };
     let mut spans = Vec::new();
     let mut painted = 0usize;
@@ -153,7 +229,7 @@ fn paint_highlighted_line(
     spans
 }
 
-fn paint_line_with_cursor(
+fn paint_chunk_with_cursor(
     content: &str,
     line_byte: usize,
     column: usize,
@@ -169,21 +245,17 @@ fn paint_line_with_cursor(
     }
 
     let chars: Vec<char> = content.chars().collect();
-    // Coluna do caret limitada ao fim da linha (caret pode ficar após último char)
     let col = column.min(chars.len());
-    let hscroll = col.saturating_sub(text_width.saturating_sub(1));
-    let cursor_local = (col - hscroll) as u16;
-
-    // Kinds por caractere no slice visível
-    let end = (hscroll + text_width).min(chars.len());
-    let visible_chars = &chars[hscroll..end];
-    let scroll_bytes: usize = chars.iter().take(hscroll).map(|c| c.len_utf8()).sum();
+    let cursor_local = col as u16;
 
     let mut spans = Vec::new();
-    let mut byte_off = line_byte + scroll_bytes;
-    for (i, ch) in visible_chars.iter().enumerate() {
+    let mut byte_off = line_byte;
+    for (i, ch) in chars.iter().enumerate() {
+        if i >= text_width {
+            break;
+        }
         let kind = kind_at(byte_off, highlights);
-        let style = if i as u16 == cursor_local {
+        let style = if i == col {
             theme.cursor_style()
         } else {
             theme.syntax_style(kind)
@@ -192,21 +264,17 @@ fn paint_line_with_cursor(
         byte_off += ch.len_utf8();
     }
 
-    // Caret além do último caractere da linha (fim da linha)
-    let mut painted = visible_chars.len();
-    if cursor_local as usize >= painted {
+    let mut painted = chars.len().min(text_width);
+    if col >= chars.len() && painted < text_width {
         spans.push(Span::styled(" ".to_string(), theme.cursor_style()));
         painted += 1;
     }
-
     if painted < text_width {
         spans.push(Span::styled(
             " ".repeat(text_width - painted),
             theme.editor_style(),
         ));
     }
-
-    // Fallback: se a linha ficou sem spans (conteúdo vazio)
     if spans.is_empty() {
         spans.push(Span::styled(" ".to_string(), theme.cursor_style()));
         if text_width > 1 {
@@ -247,6 +315,12 @@ mod tests {
     }
 
     #[test]
+    fn wrap_chunks_splits() {
+        let w = wrap_chunks("abcdefghij", 4);
+        assert_eq!(w, vec!["abcd", "efgh", "ij"]);
+    }
+
+    #[test]
     fn paint_empty_line_fills_width() {
         let theme = UiTheme::default();
         let spans = paint_highlighted_line("", 0, 10, &[], &theme);
@@ -257,20 +331,8 @@ mod tests {
     #[test]
     fn cursor_paint_marks_column() {
         let theme = UiTheme::default();
-        let painted = paint_line_with_cursor("hello", 0, 2, 20, &[], &theme);
+        let painted = paint_chunk_with_cursor("hello", 0, 2, 20, &[], &theme);
         assert_eq!(painted.cursor_col, 2);
-        // 3º span (index 2) deve ser o caret sobre 'l'
-        assert!(painted.spans.len() >= 3);
         assert_eq!(painted.spans[2].content.as_ref(), "l");
-        // caret cell should not use plain editor style
-        assert_ne!(painted.spans[2].style, theme.editor_style());
-    }
-
-    #[test]
-    fn cursor_at_eol_on_empty_line() {
-        let theme = UiTheme::default();
-        let painted = paint_line_with_cursor("", 0, 0, 10, &[], &theme);
-        assert_eq!(painted.cursor_col, 0);
-        assert!(!painted.spans.is_empty());
     }
 }

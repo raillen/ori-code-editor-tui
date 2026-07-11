@@ -10,7 +10,7 @@ use oride_core::{DocumentError, DocumentId, DocumentStore};
 use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
 use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
-use oride_syntax::{detect_language, HighlightEngine};
+use oride_syntax::{continue_list_on_enter, detect_language, HighlightEngine, LanguageId};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
     render_editor, render_palette, render_status, render_tabs, render_terminal_panel, render_tree,
@@ -75,6 +75,8 @@ pub struct App {
     overlay: Overlay,
     file_index: Vec<PathBuf>,
     highlight: HighlightEngine,
+    /// Soft wrap (default true em Markdown).
+    soft_wrap: bool,
 }
 
 impl App {
@@ -96,7 +98,9 @@ impl App {
         let workspace = std::fs::canonicalize(&workspace).unwrap_or(workspace);
         let mut store = DocumentStore::new();
         store.open_path(&path)?;
-        Ok(Self::from_store(store, workspace))
+        let mut app = Self::from_store(store, workspace);
+        app.apply_language_defaults(detect_language(Some(path.as_path())));
+        Ok(app)
     }
 
     pub fn open_workspace(dir: PathBuf) -> Result<Self, DocumentError> {
@@ -150,6 +154,7 @@ impl App {
             overlay: Overlay::None,
             file_index,
             highlight: HighlightEngine::new(),
+            soft_wrap: false,
         }
     }
 
@@ -241,9 +246,11 @@ impl App {
                         }
                     } else {
                         let path = self.workspace.join(&item);
-                        if let Err(e) = self.store.open_path(path) {
+                        if let Err(e) = self.store.open_path(&path) {
                             self.set_status(format!("open: {e}"));
                         } else {
+                            let lang = detect_language(Some(path.as_path()));
+                            self.apply_language_defaults(lang);
                             self.focus = Focus::Editor;
                             self.scroll_y = 0;
                         }
@@ -389,12 +396,14 @@ impl App {
                 if let Some(t) = self.tree.as_mut() {
                     match t.activate_selected() {
                         Ok(Some(path)) => {
-                            if let Err(e) = self.store.open_path(path) {
+                            if let Err(e) = self.store.open_path(&path) {
                                 self.set_status(format!("open: {e}"));
                             } else {
+                                let lang = detect_language(Some(path.as_path()));
+                                self.apply_language_defaults(lang);
                                 self.focus = Focus::Editor;
                                 self.scroll_y = 0;
-                                self.set_status("arquivo aberto");
+                                self.set_status(format!("aberto · {}", lang.as_str()));
                             }
                         }
                         Ok(None) => {
@@ -617,7 +626,7 @@ impl App {
             }
             Action::InsertNewline => {
                 self.quit_confirm_pending = false;
-                self.store.active_mut()?.insert_text("\n")?;
+                self.insert_newline_smart()?;
             }
             Action::InsertTab => {
                 self.quit_confirm_pending = false;
@@ -727,6 +736,17 @@ impl App {
                     buffer: self.workspace.display().to_string(),
                 };
             }
+            Action::ToggleSoftWrap => {
+                self.soft_wrap = !self.soft_wrap;
+                self.set_status(if self.soft_wrap {
+                    "soft wrap: on"
+                } else {
+                    "soft wrap: off"
+                });
+            }
+            Action::ToggleComment => {
+                self.toggle_line_comment()?;
+            }
             Action::NextTab => {
                 self.store.activate_next_tab();
                 self.scroll_y = 0;
@@ -785,6 +805,102 @@ impl App {
     }
 
     /// Troca o workspace para `path` (pasta no sistema).
+    fn active_language(&self) -> LanguageId {
+        self.store
+            .active()
+            .ok()
+            .map(|d| detect_language(d.path()))
+            .unwrap_or(LanguageId::Plain)
+    }
+
+    /// Enter inteligente: continua listas Markdown.
+    fn insert_newline_smart(&mut self) -> Result<(), DocumentError> {
+        let lang = self.active_language();
+        if lang.is_markdown_family() {
+            let (line, caret_line) = {
+                let doc = self.store.active()?;
+                let caret = doc.caret()?;
+                (
+                    doc.buffer().line_text(caret.line).unwrap_or_default(),
+                    caret.line,
+                )
+            };
+            if let Some(cont) = continue_list_on_enter(&line) {
+                self.store.active_mut()?.insert_text(&format!("\n{cont}"))?;
+                return Ok(());
+            }
+            // Linha só com marcador → sai da lista (apaga o marcador)
+            if let Some(prefix) = oride_syntax::list_prefix(&line) {
+                if line[prefix.len()..].trim().is_empty() {
+                    let doc = self.store.active_mut()?;
+                    let start = doc.buffer().line_to_byte(caret_line)?;
+                    let end = oride_core::ByteOffset::new(start.as_usize() + line.len());
+                    doc.set_selection(oride_core::Selection::new(start, end));
+                    doc.delete_selection()?;
+                    return Ok(());
+                }
+            }
+        }
+        self.store.active_mut()?.insert_text("\n")?;
+        Ok(())
+    }
+
+    fn toggle_line_comment(&mut self) -> Result<(), DocumentError> {
+        let lang = self.active_language();
+        let open = match lang.line_comment() {
+            Some(o) => o,
+            None => {
+                self.set_status("comentário não definido para esta linguagem");
+                return Ok(());
+            }
+        };
+        let close = lang.block_comment_close().unwrap_or("");
+        let doc = self.store.active_mut()?;
+        let caret = doc.caret()?;
+        let line = doc.buffer().line_text(caret.line).unwrap_or_default();
+        let indent_len = line.len() - line.trim_start().len();
+        let indent = &line[..indent_len];
+        let body = line.trim_start();
+
+        let new_line = if close.is_empty() {
+            let open_t = open.trim_end();
+            if let Some(rest) = body.strip_prefix(open_t) {
+                let rest = rest.strip_prefix(' ').unwrap_or(rest);
+                format!("{indent}{rest}")
+            } else {
+                format!("{indent}{open}{body}")
+            }
+        } else {
+            let open_t = open.trim();
+            let close_t = close.trim();
+            if body.starts_with(open_t) && body.ends_with(close_t) {
+                let inner = body
+                    .strip_prefix(open_t)
+                    .and_then(|s| s.strip_suffix(close_t))
+                    .unwrap_or(body)
+                    .trim();
+                format!("{indent}{inner}")
+            } else {
+                format!("{indent}{open_t} {body} {close_t}")
+            }
+        };
+
+        let start = doc.buffer().line_to_byte(caret.line)?;
+        let end = oride_core::ByteOffset::new(start.as_usize() + line.len());
+        doc.set_selection(oride_core::Selection::new(start, end));
+        doc.delete_selection()?;
+        doc.insert_text(&new_line)?;
+        let head = doc.buffer().line_to_byte(caret.line)?;
+        doc.set_selection(oride_core::Selection::caret(head));
+        Ok(())
+    }
+
+    fn apply_language_defaults(&mut self, lang: LanguageId) {
+        if lang.default_soft_wrap() {
+            self.soft_wrap = true;
+        }
+    }
+
     fn open_workspace_folder(&mut self, path: PathBuf) {
         let path = if path.as_os_str().is_empty() {
             self.set_status("caminho vazio");
@@ -1037,6 +1153,7 @@ impl App {
             show_line_numbers: self.show_line_numbers,
             highlights: self.highlight.spans(),
             show_cursor: self.focus == Focus::Editor && self.overlay == Overlay::None,
+            soft_wrap: self.soft_wrap,
         };
         render_editor(frame, editor_area, &view, &self.theme);
     }
