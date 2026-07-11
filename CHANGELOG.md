@@ -10,6 +10,9 @@
 - Save as (`Ctrl+Shift+S`) · Save all (`Ctrl+Alt+S`)
 - Terminal toggle (`Ctrl+"` / `Ctrl+'`)
 - **Browser de paths** para abrir pasta/arquivo (navegar dirs, filtrar, `Ctrl+Enter` confirma pasta)
+- **Save as** via browser de pastas (`Ctrl+Shift+S`): digite o nome · `Ctrl+Enter` salva
+- Highlight de linha selecionada nos modais (fundo ciano full-width, igual à árvore)
+- Aba ativa com fundo ciano + número (`▶1:nome`); atalhos `Ctrl+PgUp/PgDn`, `Alt+←/→`, `Ctrl+Shift+[/]`
 - Session leve: restaura workspace e abas; salva ao sair
 - Docs: `docs/polish.md`; Markdown **futuro** em `docs/markdown.md`
 

@@ -50,3 +50,7 @@ gutter_width = 5
 "ctrl+shift+p" = "command_palette"
 "ctrl+n" = "new_tab"
 "ctrl+w" = "close_tab"
+"ctrl+pageup" = "prev_tab"
+"ctrl+pagedown" = "next_tab"
+"alt+left" = "prev_tab"
+"alt+right" = "next_tab"

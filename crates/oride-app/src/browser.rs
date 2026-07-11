@@ -9,6 +9,8 @@ pub enum BrowseMode {
     Folder,
     /// Arquivos + diretórios; Enter em arquivo abre.
     File,
+    /// Navega pastas e confirma `cwd/name_buffer` como destino de save.
+    SaveAs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +27,7 @@ pub struct PathBrowser {
     pub mode: BrowseMode,
     pub entries: Vec<BrowseEntry>,
     pub selected: usize,
-    /// Filtro digitável (substring case-insensitive).
+    /// Filtro digitável (substring case-insensitive) — em SaveAs é o nome do arquivo.
     pub filter: String,
 }
 
@@ -37,6 +39,8 @@ pub enum BrowseAction {
     OpenFile(PathBuf),
     /// Usuário confirmou a pasta atual (ou a selecionada se for dir).
     OpenFolder(PathBuf),
+    /// Caminho completo para salvar como.
+    SaveAsPath(PathBuf),
 }
 
 impl PathBrowser {
@@ -76,7 +80,7 @@ impl PathBrowser {
             for ent in items {
                 let path = ent.path();
                 let is_dir = path.is_dir();
-                if self.mode == BrowseMode::Folder && !is_dir {
+                if matches!(self.mode, BrowseMode::Folder | BrowseMode::SaveAs) && !is_dir {
                     continue;
                 }
                 // skip heavy/noise
@@ -102,7 +106,11 @@ impl PathBrowser {
     }
 
     fn clamp_selection(&mut self) {
-        let n = self.visible_entries().len();
+        let n = if self.mode == BrowseMode::SaveAs {
+            self.entries.len()
+        } else {
+            self.visible_entries().len()
+        };
         if n == 0 {
             self.selected = 0;
         } else {
@@ -123,7 +131,11 @@ impl PathBrowser {
     }
 
     pub fn move_selection(&mut self, delta: isize) {
-        let n = self.visible_entries().len() as isize;
+        let n = if self.mode == BrowseMode::SaveAs {
+            self.entries.len()
+        } else {
+            self.visible_entries().len()
+        } as isize;
         if n == 0 {
             return;
         }
@@ -132,7 +144,11 @@ impl PathBrowser {
 
     #[must_use]
     pub fn selected_entry(&self) -> Option<&BrowseEntry> {
-        self.visible_entries().get(self.selected).copied()
+        if self.mode == BrowseMode::SaveAs {
+            self.entries.get(self.selected)
+        } else {
+            self.visible_entries().get(self.selected).copied()
+        }
     }
 
     /// Enter: entra em dir, ou confirma arquivo, ou sobe com ...
@@ -141,8 +157,14 @@ impl PathBrowser {
             return BrowseAction::Stay;
         };
         if entry.is_dir {
+            // SaveAs: ao entrar em pasta, NÃO limpa o nome do arquivo
+            let keep_name = matches!(self.mode, BrowseMode::SaveAs).then(|| self.filter.clone());
             self.cwd = entry.path;
-            self.filter.clear();
+            if let Some(name) = keep_name {
+                self.filter = name;
+            } else {
+                self.filter.clear();
+            }
             self.selected = 0;
             self.refresh();
             BrowseAction::Stay
@@ -153,29 +175,44 @@ impl PathBrowser {
         }
     }
 
-    /// Confirma pasta atual como workspace (Folder mode) ou pasta selecionada.
+    /// Confirma pasta atual como workspace (Folder) ou path de save (SaveAs).
     pub fn confirm_folder(&self) -> BrowseAction {
-        if self.mode != BrowseMode::Folder {
-            // em modo file, confirma dir selecionado se for dir
-            if let Some(e) = self.selected_entry() {
-                if e.is_dir && !e.is_parent {
-                    return BrowseAction::OpenFolder(e.path.clone());
+        match self.mode {
+            BrowseMode::SaveAs => {
+                let name = self.filter.trim();
+                if name.is_empty() || name.contains('/') || name == ".." {
+                    return BrowseAction::Stay;
                 }
+                BrowseAction::SaveAsPath(self.cwd.join(name))
             }
-            return BrowseAction::OpenFolder(self.cwd.clone());
-        }
-        if let Some(e) = self.selected_entry() {
-            if e.is_dir && !e.is_parent {
-                return BrowseAction::OpenFolder(e.path.clone());
+            BrowseMode::Folder => {
+                if let Some(e) = self.selected_entry() {
+                    if e.is_dir && !e.is_parent {
+                        return BrowseAction::OpenFolder(e.path.clone());
+                    }
+                }
+                BrowseAction::OpenFolder(self.cwd.clone())
+            }
+            BrowseMode::File => {
+                if let Some(e) = self.selected_entry() {
+                    if e.is_dir && !e.is_parent {
+                        return BrowseAction::OpenFolder(e.path.clone());
+                    }
+                }
+                BrowseAction::OpenFolder(self.cwd.clone())
             }
         }
-        BrowseAction::OpenFolder(self.cwd.clone())
     }
 
     pub fn go_parent(&mut self) {
         if let Some(p) = self.cwd.parent() {
+            let keep_name = matches!(self.mode, BrowseMode::SaveAs).then(|| self.filter.clone());
             self.cwd = p.to_path_buf();
-            self.filter.clear();
+            if let Some(name) = keep_name {
+                self.filter = name;
+            } else {
+                self.filter.clear();
+            }
             self.selected = 0;
             self.refresh();
         }
@@ -186,6 +223,15 @@ impl PathBrowser {
         match self.mode {
             BrowseMode::Folder => format!("abrir pasta — {}", self.cwd.display()),
             BrowseMode::File => format!("abrir arquivo — {}", self.cwd.display()),
+            BrowseMode::SaveAs => format!("salvar como — {}", self.cwd.display()),
+        }
+    }
+
+    #[must_use]
+    pub fn query_display(&self) -> String {
+        match self.mode {
+            BrowseMode::SaveAs => self.filter.clone(),
+            _ => self.filter.clone(),
         }
     }
 
@@ -193,15 +239,24 @@ impl PathBrowser {
     pub fn hint(&self) -> &'static str {
         match self.mode {
             BrowseMode::Folder => {
-                "↑↓ · Enter entra · Ctrl+Enter confirma pasta · Esc · digite p/ filtrar"
+                "↑↓ navegar · Enter entra · Ctrl+Enter abre esta pasta · digite filtra · Esc"
             }
-            BrowseMode::File => "↑↓ · Enter abre arquivo/entra pasta · Esc · digite p/ filtrar",
+            BrowseMode::File => "↑↓ navegar · Enter abre arquivo/entra · digite filtra · Esc",
+            BrowseMode::SaveAs => {
+                "↑↓ pastas · Enter entra · digite NOME do arquivo · Ctrl+Enter salva · Esc"
+            }
         }
     }
 
     #[must_use]
     pub fn list_labels(&self) -> Vec<String> {
-        self.visible_entries()
+        // Em SaveAs, filtro é o nome do arquivo — não filtra a lista
+        let entries: Vec<&BrowseEntry> = if self.mode == BrowseMode::SaveAs {
+            self.entries.iter().collect()
+        } else {
+            self.visible_entries()
+        };
+        entries
             .iter()
             .map(|e| {
                 if e.is_parent {
@@ -213,6 +268,15 @@ impl PathBrowser {
                 }
             })
             .collect()
+    }
+
+    #[must_use]
+    pub fn selected_index_for_display(&self) -> usize {
+        if self.mode == BrowseMode::SaveAs {
+            self.selected.min(self.entries.len().saturating_sub(1))
+        } else {
+            self.selected
+        }
     }
 }
 
@@ -230,5 +294,22 @@ mod tests {
         assert!(!b.entries.iter().any(|e| e.name == "a.txt")); // folder mode
         let b2 = PathBrowser::new(dir.path(), BrowseMode::File);
         assert!(b2.entries.iter().any(|e| e.name == "a.txt"));
+    }
+
+    #[test]
+    fn save_as_lists_dirs_only_and_confirms_path() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let mut b = PathBrowser::new(dir.path(), BrowseMode::SaveAs);
+        b.filter = "novo.txt".into();
+        assert!(b.entries.iter().any(|e| e.name == "sub"));
+        assert!(!b.entries.iter().any(|e| e.name == "a.txt"));
+        match b.confirm_folder() {
+            BrowseAction::SaveAsPath(p) => {
+                assert_eq!(p, dir.path().join("novo.txt"));
+            }
+            other => panic!("expected SaveAsPath, got {other:?}"),
+        }
     }
 }

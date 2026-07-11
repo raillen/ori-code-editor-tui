@@ -43,6 +43,8 @@ cargo build --release
 | `Ctrl+Alt+S` | **Save all** |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next tab |
+| `Alt+←` / `Alt+→` | Previous / next tab |
 | `Ctrl+B` / `Ctrl+E` | Focus tree / editor |
 | `Ctrl+O` | **Open folder** (navigate dirs · `Ctrl+Enter` confirma) |
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
@@ -55,7 +57,7 @@ cargo build --release
 | `Ctrl+/` | Toggle comment |
 | `Esc` or `Ctrl+Q` | Close overlay / quit |
 
-**Browser (`Ctrl+O` / `Ctrl+P`):** `↑↓` · `Enter` entra/abre · `Ctrl+Enter` confirma pasta · digite para filtrar · `Backspace` sobe (`..`).
+**Browser (`Ctrl+O` / `Ctrl+P` / Save as):** linha ciano = seleção · `↑↓` · `Enter` entra/abre · `Ctrl+Enter` confirma · digite filtra/nome · `Backspace` sobe.
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  
 **Terminal:** type when focused · `Esc` → editor.  
