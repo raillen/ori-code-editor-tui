@@ -20,6 +20,15 @@ impl DocumentId {
     }
 }
 
+/// Resumo de uma tab para a UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabSummary {
+    pub id: DocumentId,
+    pub title: String,
+    pub dirty: bool,
+    pub active: bool,
+}
+
 #[derive(Debug, Error)]
 pub enum DocumentError {
     #[error(transparent)]
@@ -332,14 +341,24 @@ impl DocumentStore {
         id
     }
 
-    /// Abre arquivo do disco (UTF-8).
+    /// Abre arquivo do disco (UTF-8). Se já estiver aberto, só ativa a tab.
     pub fn open_path(&mut self, path: impl AsRef<Path>) -> Result<DocumentId, DocumentError> {
         let path = path.as_ref();
+        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if let Some(existing) = self.docs.iter().find(|d| {
+            d.path
+                .as_ref()
+                .is_some_and(|p| p == &canonical || p == path)
+        }) {
+            let id = existing.id;
+            self.active = Some(id);
+            return Ok(id);
+        }
         let text = std::fs::read_to_string(path)?;
         let id = self.alloc_id();
         self.docs.push(Document {
             id,
-            path: Some(path.to_path_buf()),
+            path: Some(canonical),
             buffer: Buffer::from_text(&text),
             selection: Selection::default(),
             undo: UndoStack::new(),
@@ -348,6 +367,46 @@ impl DocumentStore {
         });
         self.active = Some(id);
         Ok(id)
+    }
+
+    /// Tab seguinte (cíclico).
+    pub fn activate_next_tab(&mut self) -> Option<DocumentId> {
+        let ids = self.tab_ids();
+        if ids.is_empty() {
+            return None;
+        }
+        let cur = self.active?;
+        let idx = ids.iter().position(|id| *id == cur).unwrap_or(0);
+        let next = ids[(idx + 1) % ids.len()];
+        self.active = Some(next);
+        Some(next)
+    }
+
+    /// Tab anterior (cíclico).
+    pub fn activate_prev_tab(&mut self) -> Option<DocumentId> {
+        let ids = self.tab_ids();
+        if ids.is_empty() {
+            return None;
+        }
+        let cur = self.active?;
+        let idx = ids.iter().position(|id| *id == cur).unwrap_or(0);
+        let prev = ids[(idx + ids.len() - 1) % ids.len()];
+        self.active = Some(prev);
+        Some(prev)
+    }
+
+    /// Metadados leves para a barra de tabs.
+    #[must_use]
+    pub fn tab_summaries(&self) -> Vec<TabSummary> {
+        self.docs
+            .iter()
+            .map(|d| TabSummary {
+                id: d.id,
+                title: d.tab_title(),
+                dirty: d.dirty,
+                active: Some(d.id) == self.active,
+            })
+            .collect()
     }
 
     #[must_use]

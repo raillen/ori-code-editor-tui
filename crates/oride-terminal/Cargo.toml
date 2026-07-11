@@ -1,0 +1,12 @@
+[package]
+name = "oride-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Embedded PTY terminal panel for Oride"
+rust-version.workspace = true
+
+[dependencies]
+portable-pty = { workspace = true }
+thiserror = { workspace = true }
+strip-ansi-escapes = { workspace = true }

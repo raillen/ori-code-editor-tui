@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-alpha.2
+
+### Added
+
+- **P1.1** — multi-tab bar, next/prev/close/new, dirty close confirm
+- **P1.2** — project tree (`oride-fs`): expand, open file, create file/folder
+- **P1.3** — Nerd Font icons + git status badges (`oride-git`)
+- **P1.4** — embedded terminal panel (`oride-terminal`, PTY), toggle/focus
+- **P1.5** — command palette + fuzzy open file
+- Open directory as workspace (`oride .`)
+
 ## 0.1.0-alpha.1
 
 ### Added

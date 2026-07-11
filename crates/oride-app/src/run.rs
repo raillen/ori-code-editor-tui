@@ -9,15 +9,14 @@ use crossterm::event::{self, Event, KeyEventKind};
 use crate::app::App;
 use crate::terminal_guard::TerminalGuard;
 
-/// Abre o editor em TUI. `path` opcional (buffer vazio se `None`).
+/// Abre o editor em TUI. `path` opcional (CWD / buffer vazio se `None`).
 pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
     let mut app = match path {
-        Some(p) => App::open_path(p).context("open file")?,
+        Some(p) => App::open_path(p).context("open path")?,
         None => App::new_empty(),
     };
 
     let mut guard = TerminalGuard::enter().context("enter terminal raw mode")?;
-    // Esconde cursor do terminal host; desenhamos o caret nós mesmos.
     guard.terminal().hide_cursor()?;
 
     loop {
@@ -27,13 +26,10 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
             break;
         }
 
-        // Poll com timeout para expirar mensagens de status
-        if event::poll(Duration::from_millis(200))? {
+        if event::poll(Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if let Some(cmd) = app.map_key(key) {
-                        app.apply(cmd);
-                    }
+                    app.handle_key(key);
                 }
                 Event::Resize(_, _) => {
                     app.ensure_cursor_visible();
@@ -41,7 +37,7 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
                 _ => {}
             }
         } else {
-            app.tick_messages();
+            app.tick();
         }
     }
 

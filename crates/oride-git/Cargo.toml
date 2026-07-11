@@ -1,0 +1,10 @@
+[package]
+name = "oride-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Git status helpers for Oride project tree"
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }

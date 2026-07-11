@@ -4,6 +4,9 @@ members = [
     "crates/oride-core",
     "crates/oride-config",
     "crates/oride-keymap",
+    "crates/oride-fs",
+    "crates/oride-git",
+    "crates/oride-terminal",
     "crates/oride-ui",
     "crates/oride-app",
     "crates/oride",
@@ -11,7 +14,7 @@ members = [
 default-members = ["crates/oride"]
 
 [workspace.package]
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/raillen/ori-code-editor-tui"
@@ -22,6 +25,9 @@ rust-version = "1.80"
 oride-core = { path = "crates/oride-core" }
 oride-config = { path = "crates/oride-config" }
 oride-keymap = { path = "crates/oride-keymap" }
+oride-fs = { path = "crates/oride-fs" }
+oride-git = { path = "crates/oride-git" }
+oride-terminal = { path = "crates/oride-terminal" }
 oride-ui = { path = "crates/oride-ui" }
 oride-app = { path = "crates/oride-app" }
 ropey = "1.6"
@@ -33,3 +39,5 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirs = "6"
 tempfile = "3"
+portable-pty = "0.8"
+strip-ansi-escapes = "0.2"

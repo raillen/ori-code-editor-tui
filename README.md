@@ -5,7 +5,7 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.1`** — Phase **P0.3**: TUI + **TOML config / keymaps / theme**.  
+Status: **`0.1.0-alpha.2`** — Phase **P1**: mini IDE shell (tree, tabs, terminal, palette).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
 Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md).
 
@@ -23,8 +23,9 @@ Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/co
 
 ```bash
 cargo build --release
-./target/release/oride                  # empty buffer
+./target/release/oride                  # CWD as workspace + empty buffer
 ./target/release/oride path/to/file     # open file
+./target/release/oride path/to/dir      # open folder as workspace
 ./target/release/oride --version
 ./target/release/oride --demo
 ./target/release/oride README.md --stat
@@ -38,7 +39,19 @@ cargo build --release
 | Arrows, Home, End, PgUp/PgDn | Move |
 | `Ctrl+S` | Save (needs a path) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `Esc` or `Ctrl+Q` | Quit (twice if dirty) |
+| `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
+| `Ctrl+PgUp` / `Ctrl+PgDn` | Prev / next tab |
+| `Ctrl+B` | Toggle project tree |
+| `Ctrl+\`` | Toggle embedded terminal |
+| `Ctrl+P` | Fuzzy open file |
+| `Ctrl+Shift+P` | Command palette |
+| `Ctrl+Shift+N` / `Ctrl+Shift+F` | New file / folder (tree) |
+| `F5` | Refresh tree + git |
+| `Esc` or `Ctrl+Q` | Close overlay / unfocus / quit (2× if dirty) |
+
+**Tree:** ↑↓ navigate · Enter open/expand · focus with `Ctrl+B`.  
+**Terminal:** type when focused · `Esc` back to editor.  
+**Icons:** Nerd Font glyphs (ASCII fallback exists in code).
 
 ### Config
 

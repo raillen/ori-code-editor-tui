@@ -135,6 +135,9 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "pageup" | "pgup" => KeyCode::PageUp,
         "pagedown" | "pgdn" | "pgdown" => KeyCode::PageDown,
         "space" => KeyCode::Char(' '),
+        "f5" => KeyCode::F(5),
+        "`" | "grave" | "backtick" => KeyCode::Char('`'),
+        "\\" | "backslash" => KeyCode::Char('\\'),
         s if s.chars().count() == 1 => {
             let c = s.chars().next().unwrap();
             KeyCode::Char(c)
@@ -159,7 +162,10 @@ fn code_token(code: KeyCode) -> String {
         KeyCode::End => "end".into(),
         KeyCode::PageUp => "pageup".into(),
         KeyCode::PageDown => "pagedown".into(),
+        KeyCode::F(5) => "f5".into(),
         KeyCode::Char(' ') => "space".into(),
+        KeyCode::Char('`') => "`".into(),
+        KeyCode::Char('\\') => "\\".into(),
         KeyCode::Char(c) => c.to_ascii_lowercase().to_string(),
         _ => "?".into(),
     }

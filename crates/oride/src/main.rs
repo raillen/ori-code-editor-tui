@@ -73,13 +73,13 @@ fn print_help() {
     println!(
         "oride {VERSION} — TUI code editor\n\n\
          USAGE:\n\
-           oride [file]           open file (or empty buffer)\n\
+           oride [path]           file, directory, or empty (CWD workspace)\n\
            oride --version\n\
            oride --demo           headless core smoke\n\
            oride <file> --stat    print line/byte stats\n\n\
-         KEYS (defaults; rebind in ~/.config/oride/config.toml):\n\
-           Ctrl+S save · Ctrl+Z undo · Ctrl+Y redo\n\
-           arrows / Home / End · Esc or Ctrl+Q quit\n\
+         KEYS (see README; rebind in ~/.config/oride/config.toml):\n\
+           Ctrl+S save · Ctrl+P open · Ctrl+Shift+P commands\n\
+           Ctrl+B tree · Ctrl+` terminal · Ctrl+N/W tabs\n\
          Config: docs/config.md · assets/config.example.toml"
     );
 }

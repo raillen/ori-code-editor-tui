@@ -166,7 +166,7 @@ fn merge_theme_ui(dst: &mut ThemeUiConfig, src: ThemeUiConfigPartial) {
     }
 }
 
-/// Bindings padrão (espelham P0.2 / P0.3).
+/// Bindings padrão (P0 + P1 shell).
 pub fn default_key_bindings() -> BTreeMap<String, String> {
     let pairs = [
         ("ctrl+s", "save"),
@@ -192,6 +192,19 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("shift+home", "move_line_start_extend"),
         ("shift+end", "move_line_end_extend"),
         ("tab", "insert_tab"),
+        // P1
+        ("ctrl+b", "toggle_tree"),
+        ("ctrl+`", "toggle_terminal"),
+        ("ctrl+\\", "focus_tree"),
+        ("ctrl+pageup", "prev_tab"),
+        ("ctrl+pagedown", "next_tab"),
+        ("ctrl+w", "close_tab"),
+        ("ctrl+n", "new_tab"),
+        ("ctrl+shift+p", "command_palette"),
+        ("ctrl+p", "open_file_fuzzy"),
+        ("ctrl+shift+n", "tree_new_file"),
+        ("ctrl+shift+f", "tree_new_dir"),
+        ("f5", "tree_refresh"),
     ];
     pairs
         .into_iter()

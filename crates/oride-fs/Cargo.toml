@@ -1,0 +1,13 @@
+[package]
+name = "oride-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Project tree and filesystem helpers for Oride"
+rust-version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

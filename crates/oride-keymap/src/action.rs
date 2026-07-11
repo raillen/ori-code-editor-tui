@@ -21,6 +21,84 @@ pub enum Action {
     MoveLineEnd { extend: bool },
     PageUp,
     PageDown,
+    // IDE shell (P1)
+    ToggleTree,
+    ToggleTerminal,
+    FocusTree,
+    FocusEditor,
+    FocusTerminal,
+    NextTab,
+    PrevTab,
+    CloseTab,
+    NewTab,
+    CommandPalette,
+    OpenFileFuzzy,
+    TreeNewFile,
+    TreeNewDir,
+    TreeRefresh,
+}
+
+impl Action {
+    /// Rótulo para a command palette.
+    #[must_use]
+    pub fn palette_label(self) -> &'static str {
+        match self {
+            Self::Quit => "Quit",
+            Self::Save => "Save",
+            Self::Undo => "Undo",
+            Self::Redo => "Redo",
+            Self::InsertNewline => "Insert newline",
+            Self::InsertTab => "Insert tab",
+            Self::Backspace => "Backspace",
+            Self::Delete => "Delete",
+            Self::MoveLeft { .. } => "Move left",
+            Self::MoveRight { .. } => "Move right",
+            Self::MoveUp { .. } => "Move up",
+            Self::MoveDown { .. } => "Move down",
+            Self::MoveLineStart { .. } => "Line start",
+            Self::MoveLineEnd { .. } => "Line end",
+            Self::PageUp => "Page up",
+            Self::PageDown => "Page down",
+            Self::ToggleTree => "Toggle project tree",
+            Self::ToggleTerminal => "Toggle terminal",
+            Self::FocusTree => "Focus tree",
+            Self::FocusEditor => "Focus editor",
+            Self::FocusTerminal => "Focus terminal",
+            Self::NextTab => "Next tab",
+            Self::PrevTab => "Previous tab",
+            Self::CloseTab => "Close tab",
+            Self::NewTab => "New tab",
+            Self::CommandPalette => "Command palette",
+            Self::OpenFileFuzzy => "Open file (fuzzy)",
+            Self::TreeNewFile => "New file (tree)",
+            Self::TreeNewDir => "New folder (tree)",
+            Self::TreeRefresh => "Refresh tree",
+        }
+    }
+
+    /// Actions listadas na palette de comandos.
+    pub fn palette_actions() -> &'static [Action] {
+        &[
+            Action::Save,
+            Action::Undo,
+            Action::Redo,
+            Action::NewTab,
+            Action::CloseTab,
+            Action::NextTab,
+            Action::PrevTab,
+            Action::ToggleTree,
+            Action::ToggleTerminal,
+            Action::FocusTree,
+            Action::FocusEditor,
+            Action::FocusTerminal,
+            Action::OpenFileFuzzy,
+            Action::CommandPalette,
+            Action::TreeNewFile,
+            Action::TreeNewDir,
+            Action::TreeRefresh,
+            Action::Quit,
+        ]
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -51,6 +129,20 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "move_line_end_extend" => Action::MoveLineEnd { extend: true },
         "page_up" => Action::PageUp,
         "page_down" => Action::PageDown,
+        "toggle_tree" => Action::ToggleTree,
+        "toggle_terminal" => Action::ToggleTerminal,
+        "focus_tree" => Action::FocusTree,
+        "focus_editor" => Action::FocusEditor,
+        "focus_terminal" => Action::FocusTerminal,
+        "next_tab" => Action::NextTab,
+        "prev_tab" => Action::PrevTab,
+        "close_tab" => Action::CloseTab,
+        "new_tab" => Action::NewTab,
+        "command_palette" => Action::CommandPalette,
+        "open_file_fuzzy" => Action::OpenFileFuzzy,
+        "tree_new_file" => Action::TreeNewFile,
+        "tree_new_dir" => Action::TreeNewDir,
+        "tree_refresh" => Action::TreeRefresh,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)
@@ -63,6 +155,7 @@ mod tests {
     #[test]
     fn parses_known_actions() {
         assert_eq!(parse_action("save").unwrap(), Action::Save);
+        assert_eq!(parse_action("toggle_tree").unwrap(), Action::ToggleTree);
         assert_eq!(
             parse_action("move_left_extend").unwrap(),
             Action::MoveLeft { extend: true }

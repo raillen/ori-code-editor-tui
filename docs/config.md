@@ -35,8 +35,15 @@ Exemplo completo: [`assets/config.example.toml`](../assets/config.example.toml).
 | `move_left` … `move_line_end` | Movimento |
 | `move_*_extend` | Movimento com seleção |
 | `page_up` / `page_down` | Página |
+| `toggle_tree` / `toggle_terminal` | Painéis |
+| `focus_tree` / `focus_editor` / `focus_terminal` | Foco |
+| `next_tab` / `prev_tab` / `close_tab` / `new_tab` | Tabs |
+| `command_palette` / `open_file_fuzzy` | Palette |
+| `tree_new_file` / `tree_new_dir` / `tree_refresh` | Árvore |
 
-Chords: `ctrl+s`, `shift+left`, `esc`, `pageup`, … (minúsculas, `+` como separador).
+Chords: `ctrl+s`, `shift+left`, `esc`, `pageup`, `ctrl+shift+p`, … (minúsculas, `+` como separador).
+
+Defaults P1: `ctrl+b` tree, `ctrl+\`` terminal, `ctrl+p` open, `ctrl+shift+p` commands.
 
 ## Validação
 

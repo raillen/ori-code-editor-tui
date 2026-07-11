@@ -11,6 +11,9 @@ oride-core = { workspace = true }
 oride-config = { workspace = true }
 oride-keymap = { workspace = true }
 oride-ui = { workspace = true }
+oride-fs = { workspace = true }
+oride-git = { workspace = true }
+oride-terminal = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 anyhow = { workspace = true }
