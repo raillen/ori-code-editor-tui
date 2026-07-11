@@ -4,12 +4,14 @@
 
 ### Added (P4 polish)
 
-- Help overlay (`Ctrl+G`)
-- Find / find next-prev / replace (`Ctrl+F`, `F3`, `Ctrl+H`)
+- Help overlay (`Ctrl+H`)
+- Find / find next-prev / replace (`Ctrl+F`, `F3`, `Ctrl+Shift+H`)
 - Clipboard copy/paste/cut (`Ctrl+C/V/X`) via arboard + fallback interno
-- Save all (`Ctrl+Shift+S`)
+- Save as (`Ctrl+Shift+S`) · Save all (`Ctrl+Alt+S`)
+- Terminal toggle (`Ctrl+"` / `Ctrl+'`)
+- **Browser de paths** para abrir pasta/arquivo (navegar dirs, filtrar, `Ctrl+Enter` confirma pasta)
 - Session leve: restaura workspace e abas; salva ao sair
-- Docs: `docs/polish.md`; Markdown **futuro** (preview, fence HL, MDX JSX) em `docs/markdown.md`
+- Docs: `docs/polish.md`; Markdown **futuro** em `docs/markdown.md`
 
 ## 0.1.0-alpha.3
 

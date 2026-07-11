@@ -707,6 +707,7 @@ dependencies = [
  "oride-ui",
  "ratatui",
  "serde",
+ "tempfile",
  "toml",
 ]
 

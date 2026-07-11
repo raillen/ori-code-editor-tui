@@ -7,6 +7,7 @@ use thiserror::Error;
 pub enum Action {
     Quit,
     Save,
+    SaveAs,
     SaveAll,
     Undo,
     Redo,
@@ -57,6 +58,7 @@ impl Action {
         match self {
             Self::Quit => "Quit",
             Self::Save => "Save",
+            Self::SaveAs => "Save as…",
             Self::SaveAll => "Save all",
             Self::Undo => "Undo",
             Self::Redo => "Redo",
@@ -104,6 +106,7 @@ impl Action {
     pub fn palette_actions() -> &'static [Action] {
         &[
             Action::Save,
+            Action::SaveAs,
             Action::SaveAll,
             Action::Undo,
             Action::Redo,
@@ -145,6 +148,7 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
     let action = match id {
         "quit" => Action::Quit,
         "save" => Action::Save,
+        "save_as" => Action::SaveAs,
         "save_all" => Action::SaveAll,
         "undo" => Action::Undo,
         "redo" => Action::Redo,

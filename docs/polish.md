@@ -6,13 +6,16 @@ Fatias de DX para candidatar release **0.1.0** (sem LSP ainda).
 
 | Feature | Atalho / notas |
 |---------|----------------|
-| Help overlay | `Ctrl+G` |
+| Help overlay | `Ctrl+H` |
 | Find no buffer | `Ctrl+F`, `F3` / `Shift+F3` |
-| Replace | `Ctrl+H` (Tab = campo, Enter = substitui atual) |
-| Copy / Paste / Cut | `Ctrl+C` / `V` / `X` (arboard + buffer interno) |
-| Save all | `Ctrl+Shift+S` |
-| Session leve | restaura workspace+tabs ao abrir sem args; salva ao sair |
-| Markdown futuro documentado | `docs/markdown.md` § Futuro |
+| Replace | `Ctrl+Shift+H` |
+| Copy / Paste / Cut | `Ctrl+C` / `V` / `X` |
+| Save as | `Ctrl+Shift+S` |
+| Save all | `Ctrl+Alt+S` |
+| Terminal | `Ctrl+"` (ou `Ctrl+'`) |
+| Open folder / file | browser navegável (`Ctrl+O` / `Ctrl+P`) |
+| Session leve | restaura workspace+tabs; salva ao sair |
+| Markdown futuro | `docs/markdown.md` § Futuro |
 
 ## Ainda desejável no P4 / pré-0.1.0
 

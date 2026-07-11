@@ -22,3 +22,6 @@ arboard = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 dirs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

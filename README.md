@@ -38,27 +38,24 @@ cargo build --release
 |-----|--------|
 | Type / Enter / Backspace / Delete | Edit |
 | Arrows, Home, End, PgUp/PgDn | Move |
-| `Ctrl+S` | Save (needs a path) |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+S` | **Save as…** |
+| `Ctrl+Alt+S` | **Save all** |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
-| `Ctrl+PgUp` / `Ctrl+PgDn` | Prev / next tab |
-| `Ctrl+B` | **Focus tree** (show + navigate) |
-| `Ctrl+E` | **Focus editor** |
-| `Ctrl+Shift+B` | Hide/show tree panel |
-| `Ctrl+O` | **Open project folder** (path prompt) |
-| `Ctrl+\`` | Toggle embedded terminal |
-| `Ctrl+P` | Fuzzy open file |
-| `Ctrl+Shift+P` | Command palette |
-| `Ctrl+Shift+N` / `Ctrl+Shift+F` | New file / folder (tree) |
-| `F5` | Refresh tree + git |
-| `Alt+Z` | Toggle soft wrap (default on for Markdown) |
-| `Ctrl+/` | Toggle line comment (`<!-- -->` in MD) |
-| `Ctrl+F` / `F3` | Find / next match |
-| `Ctrl+H` | Replace |
+| `Ctrl+B` / `Ctrl+E` | Focus tree / editor |
+| `Ctrl+O` | **Open folder** (navigate dirs · `Ctrl+Enter` confirma) |
+| `Ctrl+P` | **Open file** (navigate dirs/files) |
+| `Ctrl+"` / `Ctrl+'` | Toggle terminal |
+| `Ctrl+H` | Help |
+| `Ctrl+F` / `F3` | Find / next |
+| `Ctrl+Shift+H` | Replace |
 | `Ctrl+C` / `V` / `X` | Copy / paste / cut |
-| `Ctrl+Shift+S` | Save all |
-| `Ctrl+G` | Help (keybindings) |
-| `Esc` or `Ctrl+Q` | Close overlay / unfocus / quit (2× if dirty) |
+| `Alt+Z` | Soft wrap |
+| `Ctrl+/` | Toggle comment |
+| `Esc` or `Ctrl+Q` | Close overlay / quit |
+
+**Browser (`Ctrl+O` / `Ctrl+P`):** `↑↓` · `Enter` entra/abre · `Ctrl+Enter` confirma pasta · digite para filtrar · `Backspace` sobe (`..`).
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  
 **Terminal:** type when focused · `Esc` → editor.  

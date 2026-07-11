@@ -19,6 +19,7 @@ use oride_ui::{
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
 
+use crate::browser::{BrowseAction, BrowseMode, PathBrowser};
 use crate::clipboard;
 use crate::find::FindState;
 use crate::session::Session;
@@ -44,10 +45,8 @@ enum Overlay {
         query: String,
         selected: usize,
     },
-    OpenFile {
-        query: String,
-        selected: usize,
-    },
+    /// Navegador de pastas (workspace) ou arquivos.
+    Browse(PathBrowser),
     Prompt {
         kind: PromptKind,
         buffer: String,
@@ -66,8 +65,8 @@ enum Overlay {
 enum PromptKind {
     NewFile,
     NewDir,
-    /// Caminho de pasta a abrir como workspace.
-    OpenFolder,
+    /// Caminho completo para “salvar como”.
+    SaveAs,
 }
 
 pub struct App {
@@ -273,8 +272,12 @@ impl App {
     fn handle_overlay_key(&mut self, key: KeyEvent) -> bool {
         match &self.overlay {
             Overlay::None => false,
-            Overlay::CommandPalette { .. } | Overlay::OpenFile { .. } => {
+            Overlay::CommandPalette { .. } => {
                 self.handle_palette_key(key);
+                true
+            }
+            Overlay::Browse(_) => {
+                self.handle_browse_key(key);
                 true
             }
             Overlay::Prompt { .. } => {
@@ -294,6 +297,82 @@ impl App {
             Overlay::Replace { .. } => {
                 self.handle_replace_key(key);
                 true
+            }
+        }
+    }
+
+    fn handle_browse_key(&mut self, key: KeyEvent) {
+        let Overlay::Browse(browser) = &mut self.overlay else {
+            return;
+        };
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+        let action = match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                None
+            }
+            KeyCode::Up | KeyCode::Char('k') if !ctrl => {
+                browser.move_selection(-1);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') if !ctrl => {
+                browser.move_selection(1);
+                None
+            }
+            KeyCode::PageUp => {
+                browser.move_selection(-10);
+                None
+            }
+            KeyCode::PageDown => {
+                browser.move_selection(10);
+                None
+            }
+            KeyCode::Backspace if browser.filter.is_empty() => {
+                browser.go_parent();
+                None
+            }
+            KeyCode::Backspace => {
+                browser.filter.pop();
+                browser.selected = 0;
+                None
+            }
+            KeyCode::Enter if ctrl => Some(browser.confirm_folder()),
+            KeyCode::Enter => Some(browser.activate()),
+            KeyCode::Char('o') if ctrl => Some(browser.confirm_folder()),
+            KeyCode::Char(c)
+                if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) && !c.is_control() =>
+            {
+                browser.filter.push(c);
+                browser.selected = 0;
+                None
+            }
+            _ => None,
+        };
+
+        if let Some(action) = action {
+            self.apply_browse_action(action);
+        }
+    }
+
+    fn apply_browse_action(&mut self, action: BrowseAction) {
+        match action {
+            BrowseAction::Stay => {}
+            BrowseAction::OpenFile(path) => {
+                self.overlay = Overlay::None;
+                if let Err(e) = self.store.open_path(&path) {
+                    self.set_status(format!("open: {e}"));
+                } else {
+                    let lang = detect_language(Some(path.as_path()));
+                    self.apply_language_defaults(lang);
+                    self.focus = Focus::Editor;
+                    self.scroll_y = 0;
+                    self.set_status(format!("aberto · {}", path.display()));
+                }
+            }
+            BrowseAction::OpenFolder(path) => {
+                self.overlay = Overlay::None;
+                self.open_workspace_folder(path);
             }
         }
     }
@@ -428,100 +507,75 @@ impl App {
     }
 
     fn handle_palette_key(&mut self, key: KeyEvent) {
-        let (is_cmd, query, selected) = match &self.overlay {
-            Overlay::CommandPalette { query, selected } => (true, query.clone(), *selected),
-            Overlay::OpenFile { query, selected } => (false, query.clone(), *selected),
-            _ => return,
+        let Overlay::CommandPalette { query, selected } = &self.overlay else {
+            return;
         };
+        let query = query.clone();
+        let selected = *selected;
 
         match key.code {
             KeyCode::Esc => {
                 self.overlay = Overlay::None;
             }
             KeyCode::Enter => {
-                let items = self.palette_items(is_cmd, &query);
+                let items = self.command_palette_items(&query);
                 if let Some(item) = items.get(selected).cloned() {
                     self.overlay = Overlay::None;
-                    if is_cmd {
-                        if let Some(action) = Action::palette_actions()
-                            .iter()
-                            .find(|a| a.palette_label() == item)
-                            .copied()
-                        {
-                            let _ = self.apply_action(action);
-                        }
-                    } else {
-                        let path = self.workspace.join(&item);
-                        if let Err(e) = self.store.open_path(&path) {
-                            self.set_status(format!("open: {e}"));
-                        } else {
-                            let lang = detect_language(Some(path.as_path()));
-                            self.apply_language_defaults(lang);
-                            self.focus = Focus::Editor;
-                            self.scroll_y = 0;
-                        }
+                    if let Some(action) = Action::palette_actions()
+                        .iter()
+                        .find(|a| a.palette_label() == item)
+                        .copied()
+                    {
+                        let _ = self.apply_action(action);
                     }
                 }
             }
             KeyCode::Up => {
-                let len = self.palette_items(is_cmd, &query).len();
+                let len = self.command_palette_items(&query).len();
                 let selected = if len == 0 {
                     0
                 } else {
                     selected.saturating_sub(1)
                 };
-                self.set_palette(is_cmd, query, selected);
+                self.overlay = Overlay::CommandPalette { query, selected };
             }
             KeyCode::Down => {
-                let len = self.palette_items(is_cmd, &query).len();
+                let len = self.command_palette_items(&query).len();
                 let selected = if len == 0 {
                     0
                 } else {
                     (selected + 1).min(len - 1)
                 };
-                self.set_palette(is_cmd, query, selected);
+                self.overlay = Overlay::CommandPalette { query, selected };
             }
             KeyCode::Backspace => {
                 let mut q = query;
                 q.pop();
-                self.set_palette(is_cmd, q, 0);
+                self.overlay = Overlay::CommandPalette {
+                    query: q,
+                    selected: 0,
+                };
             }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let mut q = query;
                 q.push(c);
-                self.set_palette(is_cmd, q, 0);
+                self.overlay = Overlay::CommandPalette {
+                    query: q,
+                    selected: 0,
+                };
             }
             _ => {}
         }
     }
 
-    fn set_palette(&mut self, is_cmd: bool, query: String, selected: usize) {
-        self.overlay = if is_cmd {
-            Overlay::CommandPalette { query, selected }
-        } else {
-            Overlay::OpenFile { query, selected }
-        };
-    }
-
-    fn palette_items(&self, is_cmd: bool, query: &str) -> Vec<String> {
-        if is_cmd {
-            let mut items: Vec<String> = Action::palette_actions()
-                .iter()
-                .map(|a| a.palette_label().to_string())
-                .filter(|l| fuzzy_match(query, l))
-                .collect();
-            items.sort();
-            items
-        } else {
-            let mut items: Vec<String> = self
-                .file_index
-                .iter()
-                .map(|p| p.display().to_string())
-                .filter(|p| fuzzy_match(query, p))
-                .collect();
-            items.truncate(200);
-            items
-        }
+    fn command_palette_items(&self, query: &str) -> Vec<String> {
+        let mut items: Vec<String> = Action::palette_actions()
+            .iter()
+            .map(|a| a.palette_label().to_string())
+            .filter(|l| fuzzy_match(query, l))
+            .collect();
+        items.sort();
+        items
     }
 
     fn handle_prompt_key(&mut self, key: KeyEvent) {
@@ -535,15 +589,29 @@ impl App {
             KeyCode::Enter => {
                 self.overlay = Overlay::None;
                 match kind {
-                    PromptKind::OpenFolder => {
-                        self.open_workspace_folder(PathBuf::from(buffer.trim()));
+                    PromptKind::SaveAs => {
+                        let path = PathBuf::from(buffer.trim());
+                        if path.as_os_str().is_empty() {
+                            self.set_status("save as: caminho vazio");
+                        } else {
+                            match self.store.active_mut() {
+                                Ok(doc) => match doc.save_to(Some(&path)) {
+                                    Ok(()) => {
+                                        self.set_status(format!("salvo: {}", path.display()));
+                                        self.refresh_git_and_index();
+                                    }
+                                    Err(e) => self.set_status(format!("save as: {e}")),
+                                },
+                                Err(e) => self.set_status(format!("save as: {e}")),
+                            }
+                        }
                     }
                     PromptKind::NewFile | PromptKind::NewDir => {
                         if let Some(tree) = self.tree.as_mut() {
                             let create = match kind {
                                 PromptKind::NewFile => CreateKind::File,
                                 PromptKind::NewDir => CreateKind::Directory,
-                                PromptKind::OpenFolder => unreachable!(),
+                                PromptKind::SaveAs => unreachable!(),
                             };
                             match tree.create_under_selection(create, &buffer) {
                                 Ok(path) => {
@@ -818,6 +886,18 @@ impl App {
                     Err(e) => return Err(e),
                 }
             }
+            Action::SaveAs => {
+                let prefill = self
+                    .store
+                    .active()
+                    .ok()
+                    .and_then(|d| d.path().map(|p| p.display().to_string()))
+                    .unwrap_or_else(|| self.workspace.join("untitled.txt").display().to_string());
+                self.overlay = Overlay::Prompt {
+                    kind: PromptKind::SaveAs,
+                    buffer: prefill,
+                };
+            }
             Action::SaveAll => {
                 let (n, skip) = self.store.save_all();
                 self.refresh_git_and_index();
@@ -1009,10 +1089,14 @@ impl App {
                 }
             }
             Action::OpenFolder => {
-                self.overlay = Overlay::Prompt {
-                    kind: PromptKind::OpenFolder,
-                    buffer: self.workspace.display().to_string(),
-                };
+                let browser = PathBrowser::new(&self.workspace, BrowseMode::Folder);
+                self.set_status(browser.hint());
+                self.overlay = Overlay::Browse(browser);
+            }
+            Action::OpenFileFuzzy => {
+                let browser = PathBrowser::new(&self.workspace, BrowseMode::File);
+                self.set_status(browser.hint());
+                self.overlay = Overlay::Browse(browser);
             }
             Action::ToggleSoftWrap => {
                 self.soft_wrap = !self.soft_wrap;
@@ -1041,13 +1125,6 @@ impl App {
             Action::CloseTab => self.close_active_tab()?,
             Action::CommandPalette => {
                 self.overlay = Overlay::CommandPalette {
-                    query: String::new(),
-                    selected: 0,
-                };
-            }
-            Action::OpenFileFuzzy => {
-                self.refresh_file_index();
-                self.overlay = Overlay::OpenFile {
                     query: String::new(),
                     selected: 0,
                 };
@@ -1337,7 +1414,7 @@ impl App {
         match &self.overlay {
             Overlay::None => {}
             Overlay::CommandPalette { query, selected } => {
-                let items = self.palette_items(true, query);
+                let items = self.command_palette_items(query);
                 let view = PaletteView {
                     title: "commands",
                     query,
@@ -1346,21 +1423,22 @@ impl App {
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
-            Overlay::OpenFile { query, selected } => {
-                let items = self.palette_items(false, query);
+            Overlay::Browse(browser) => {
+                let items = browser.list_labels();
                 let view = PaletteView {
-                    title: "open file",
-                    query,
+                    title: &browser.title(),
+                    query: &browser.filter,
                     items: &items,
-                    selected: *selected,
+                    selected: browser.selected,
                 };
                 render_palette(frame, area, &view, &self.theme);
+                // hint na status via message ephemeral se vazio
             }
             Overlay::Prompt { kind, buffer } => {
                 let title = match kind {
                     PromptKind::NewFile => "novo arquivo",
                     PromptKind::NewDir => "nova pasta",
-                    PromptKind::OpenFolder => "abrir pasta de projeto (caminho)",
+                    PromptKind::SaveAs => "salvar como (caminho completo)",
                 };
                 let items: &[String] = &[];
                 let view = PaletteView {
@@ -1536,12 +1614,13 @@ fn build_default_keymap() -> Keymap {
 }
 
 const HELP_LINES: &[&str] = &[
-    "Ctrl+S save · Ctrl+Shift+S save all",
+    "Ctrl+S save · Ctrl+Shift+S save as · Ctrl+Alt+S save all",
     "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut",
-    "Ctrl+F find · F3/Shift+F3 next/prev · Ctrl+H replace",
-    "Ctrl+B tree · Ctrl+E editor · Ctrl+O open folder",
-    "Ctrl+P open file · Ctrl+Shift+P commands · Ctrl+G help",
-    "Alt+Z soft wrap · Ctrl+/ comment · Ctrl+` terminal",
+    "Ctrl+F find · F3/Shift+F3 next/prev · Ctrl+Shift+H replace",
+    "Ctrl+B tree · Ctrl+E editor · Ctrl+O open folder (navegável)",
+    "Ctrl+P open file (navegável) · Ctrl+Shift+P commands",
+    "Ctrl+H help · Ctrl+\" terminal · Alt+Z soft wrap · Ctrl+/ comment",
+    "Browser: ↑↓ · Enter entra/abre · Ctrl+Enter confirma pasta · digite filtra",
     "Ctrl+N/W tabs · Esc fecha overlay / desfaz foco",
 ];
 
@@ -1659,7 +1738,7 @@ mod tests {
     #[test]
     fn command_palette_filters() {
         let app = App::new_empty();
-        let items = app.palette_items(true, "tab");
+        let items = app.command_palette_items("tab");
         assert!(items.iter().any(|i| i.to_lowercase().contains("tab")));
     }
 
@@ -1684,16 +1763,23 @@ mod tests {
     }
 
     #[test]
-    fn open_folder_prompt() {
+    fn open_folder_opens_browser() {
         let mut app = App::new_empty();
         app.apply(KeyCommand::Action(Action::OpenFolder));
-        assert!(matches!(
-            app.overlay,
-            Overlay::Prompt {
-                kind: PromptKind::OpenFolder,
-                ..
-            }
-        ));
+        assert!(matches!(app.overlay, Overlay::Browse(_)));
+        if let Overlay::Browse(b) = &app.overlay {
+            assert_eq!(b.mode, BrowseMode::Folder);
+        }
+    }
+
+    #[test]
+    fn open_file_opens_browser() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::OpenFileFuzzy));
+        assert!(matches!(app.overlay, Overlay::Browse(_)));
+        if let Overlay::Browse(b) = &app.overlay {
+            assert_eq!(b.mode, BrowseMode::File);
+        }
     }
 
     #[test]
@@ -1710,6 +1796,40 @@ mod tests {
         assert_eq!(
             app.map_key(key_ctrl(KeyCode::Char('o'))),
             Some(KeyCommand::Action(Action::OpenFolder))
+        );
+        assert_eq!(
+            app.map_key(key_ctrl(KeyCode::Char('h'))),
+            Some(KeyCommand::Action(Action::Help))
+        );
+        assert_eq!(
+            app.map_key(key_ctrl(KeyCode::Char('"'))),
+            Some(KeyCommand::Action(Action::ToggleTerminal))
+        );
+    }
+
+    #[test]
+    fn map_save_as_and_save_all() {
+        use crossterm::event::KeyModifiers;
+        let app = App::new_empty();
+        let save_as = KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let save_all = KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(save_as),
+            Some(KeyCommand::Action(Action::SaveAs))
+        );
+        assert_eq!(
+            app.map_key(save_all),
+            Some(KeyCommand::Action(Action::SaveAll))
         );
     }
 }

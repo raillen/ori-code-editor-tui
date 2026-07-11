@@ -170,7 +170,8 @@ fn merge_theme_ui(dst: &mut ThemeUiConfig, src: ThemeUiConfigPartial) {
 pub fn default_key_bindings() -> BTreeMap<String, String> {
     let pairs = [
         ("ctrl+s", "save"),
-        ("ctrl+shift+s", "save_all"),
+        ("ctrl+shift+s", "save_as"),
+        ("ctrl+alt+s", "save_all"),
         ("ctrl+q", "quit"),
         ("esc", "quit"),
         ("ctrl+z", "undo"),
@@ -181,7 +182,8 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+f", "find"),
         ("f3", "find_next"),
         ("shift+f3", "find_prev"),
-        ("ctrl+h", "replace"),
+        ("ctrl+shift+h", "replace"),
+        ("ctrl+h", "help"),
         ("ctrl+g", "help"),
         ("enter", "insert_newline"),
         ("backspace", "backspace"),
@@ -207,6 +209,8 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+e", "focus_editor"),
         ("ctrl+shift+b", "toggle_tree"),
         ("ctrl+shift+e", "focus_toggle_tree_editor"),
+        ("ctrl+\"", "toggle_terminal"),
+        ("ctrl+'", "toggle_terminal"),
         ("ctrl+`", "toggle_terminal"),
         ("ctrl+\\", "focus_tree"),
         ("ctrl+o", "open_folder"),
