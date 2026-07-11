@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::buffer::{Buffer, BufferError};
-use crate::position::ByteOffset;
+use crate::position::{ByteOffset, Caret};
 use crate::selection::Selection;
 use crate::undo::{Edit, UndoStack};
 
@@ -41,6 +41,8 @@ pub struct Document {
     selection: Selection,
     undo: UndoStack,
     dirty: bool,
+    /// Coluna preferida ao mover ↑/↓ (estilo editores clássicos).
+    preferred_column: Option<usize>,
 }
 
 impl Document {
@@ -71,7 +73,83 @@ impl Document {
 
     pub fn set_selection(&mut self, selection: Selection) {
         self.selection = selection;
+        self.preferred_column = None;
         self.undo.commit_group();
+    }
+
+    /// Caret atual (linha/coluna).
+    pub fn caret(&self) -> Result<Caret, DocumentError> {
+        Ok(self.buffer.byte_to_caret(self.selection.head)?)
+    }
+
+    fn move_head_to(&mut self, head: ByteOffset, extend: bool) {
+        self.selection = self.selection.move_head(head, extend);
+        self.undo.commit_group();
+    }
+
+    /// Move o caret um caractere à esquerda.
+    pub fn move_left(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let head = self.buffer.prev_char_offset(self.selection.head)?;
+        self.preferred_column = None;
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// Move o caret um caractere à direita.
+    pub fn move_right(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let head = self.buffer.next_char_offset(self.selection.head)?;
+        self.preferred_column = None;
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// Move o caret uma linha acima, preservando coluna preferida.
+    pub fn move_up(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        if caret.line == 0 {
+            return Ok(());
+        }
+        let col = self.preferred_column.unwrap_or(caret.column);
+        self.preferred_column = Some(col);
+        let target = Caret::new(caret.line - 1, col);
+        let head = self.buffer.caret_to_byte(target)?;
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// Move o caret uma linha abaixo, preservando coluna preferida.
+    pub fn move_down(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        let last_line = self.buffer.line_count().saturating_sub(1);
+        if caret.line >= last_line {
+            return Ok(());
+        }
+        let col = self.preferred_column.unwrap_or(caret.column);
+        self.preferred_column = Some(col);
+        let target = Caret::new(caret.line + 1, col);
+        let head = self.buffer.caret_to_byte(target)?;
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// Home da linha atual.
+    pub fn move_line_start(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        let head = self.buffer.caret_to_byte(Caret::new(caret.line, 0))?;
+        self.preferred_column = Some(0);
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// End da linha atual.
+    pub fn move_line_end(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        let line = self.buffer.line_text(caret.line)?;
+        let col = line.chars().count();
+        let head = self.buffer.caret_to_byte(Caret::new(caret.line, col))?;
+        self.preferred_column = Some(col);
+        self.move_head_to(head, extend);
+        Ok(())
     }
 
     /// Título para tab: nome do arquivo ou "untitled".
@@ -108,21 +186,38 @@ impl Document {
         if !self.selection.is_empty() {
             return self.delete_selection();
         }
-        let head = self.selection.head.as_usize();
-        if head == 0 {
+        let end = self.selection.head;
+        if end.as_usize() == 0 {
             return Ok(());
         }
-        // Apaga um char UTF-8 anterior
-        let text = self.buffer.as_string();
-        let prev = prev_char_boundary(&text, head);
-        let start = ByteOffset::new(prev);
-        let end = ByteOffset::new(head);
+        let start = self.buffer.prev_char_offset(end)?;
         let removed = self.buffer.delete_range(start, end)?;
         self.undo.push_applied(Edit::Delete {
             at: start,
             text: removed,
         });
         self.selection = Selection::caret(start);
+        self.preferred_column = None;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Delete à frente do caret (ou a seleção).
+    pub fn delete_forward(&mut self) -> Result<(), DocumentError> {
+        if !self.selection.is_empty() {
+            return self.delete_selection();
+        }
+        let start = self.selection.head;
+        if start.as_usize() >= self.buffer.len_bytes() {
+            return Ok(());
+        }
+        let end = self.buffer.next_char_offset(start)?;
+        let removed = self.buffer.delete_range(start, end)?;
+        self.undo.push_applied(Edit::Delete {
+            at: start,
+            text: removed,
+        });
+        self.preferred_column = None;
         self.dirty = true;
         Ok(())
     }
@@ -231,6 +326,7 @@ impl DocumentStore {
             selection: Selection::default(),
             undo: UndoStack::new(),
             dirty: false,
+            preferred_column: None,
         });
         self.active = Some(id);
         id
@@ -248,6 +344,7 @@ impl DocumentStore {
             selection: Selection::default(),
             undo: UndoStack::new(),
             dirty: false,
+            preferred_column: None,
         });
         self.active = Some(id);
         Ok(id)
@@ -313,17 +410,6 @@ impl DocumentStore {
     }
 }
 
-fn prev_char_boundary(text: &str, byte_idx: usize) -> usize {
-    if byte_idx == 0 {
-        return 0;
-    }
-    let mut i = byte_idx - 1;
-    while i > 0 && !text.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,5 +450,19 @@ mod tests {
         store.set_active(a).unwrap();
         assert_eq!(store.active_id(), Some(a));
         assert_eq!(store.tab_ids().len(), 2);
+    }
+
+    #[test]
+    fn move_up_down_preserves_preferred_column() {
+        let mut store = DocumentStore::new();
+        let id = store.open_empty();
+        let doc = store.get_mut(id).unwrap();
+        doc.insert_text("hello\nxy\nworld").unwrap();
+        doc.move_line_end(false).unwrap();
+        assert_eq!(doc.caret().unwrap().column, 5);
+        doc.move_up(false).unwrap();
+        assert_eq!(doc.caret().unwrap(), Caret::new(1, 2)); // "xy" só tem 2 cols
+        doc.move_up(false).unwrap();
+        assert_eq!(doc.caret().unwrap(), Caret::new(0, 5));
     }
 }

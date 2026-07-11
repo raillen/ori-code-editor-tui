@@ -45,7 +45,7 @@ cargo test --workspace
 
 | Fase | Foco |
 |------|------|
-| P0 | core + config/keymap/theme + TUI mínimo |
+| P0 | core + **TUI mínimo (P0.2 feito)** + config/keymap/theme (P0.3) |
 | P1 | tabs, árvore, terminal, palette |
 | P2 | tree-sitter + linguagens nativas |
 | P3 | LSP OriScript |

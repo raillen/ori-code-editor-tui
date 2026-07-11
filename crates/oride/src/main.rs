@@ -1,9 +1,4 @@
-//! Binário `oride` — scaffold Fase 0 (sem TUI ainda).
-//!
-//! Uso:
-//!   oride --version
-//!   oride --demo              # exercita oride-core em memória
-//!   oride <arquivo> --stat    # abre e imprime stats (headless)
+//! Binário `oride` — editor TUI (P0.2).
 
 use std::env;
 use std::path::PathBuf;
@@ -15,7 +10,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
+
+    if args.iter().any(|a| a == "-h" || a == "--help") {
         print_help();
         return ExitCode::SUCCESS;
     }
@@ -29,37 +25,45 @@ fn main() -> ExitCode {
 
     let mut path: Option<PathBuf> = None;
     let mut stat = false;
+    let mut force_headless = false;
+
     for arg in &args {
         match arg.as_str() {
             "--stat" => stat = true,
-            other if !other.starts_with('-') => path = Some(PathBuf::from(other)),
-            other => {
+            "--headless" => force_headless = true,
+            other if other.starts_with('-') => {
                 eprintln!("unknown argument: {other}");
                 print_help();
                 return ExitCode::from(2);
             }
+            other => path = Some(PathBuf::from(other)),
         }
     }
 
-    let Some(path) = path else {
-        eprintln!("error: path required (TUI still WIP — use --demo or --stat <file>)");
-        print_help();
-        return ExitCode::from(2);
-    };
-
-    if !stat {
-        eprintln!(
-            "oride {VERSION}: TUI not implemented yet (Phase 0 scaffold).\n\
-             Use: oride --stat {}   or   oride --demo",
-            path.display()
-        );
-        return ExitCode::from(1);
+    if stat {
+        let Some(path) = path else {
+            eprintln!("error: --stat requires a file path");
+            return ExitCode::from(2);
+        };
+        return match print_file_stat(&path) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::from(1)
+            }
+        };
     }
 
-    match print_file_stat(&path) {
+    if force_headless {
+        eprintln!("--headless without --stat is a no-op; use TUI or --stat");
+        return ExitCode::from(2);
+    }
+
+    // TUI: path opcional
+    match oride_app::run(path) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("error: {err}");
+            eprintln!("error: {err:#}");
             ExitCode::from(1)
         }
     }
@@ -67,12 +71,15 @@ fn main() -> ExitCode {
 
 fn print_help() {
     println!(
-        "oride {VERSION} — TUI code editor (scaffold)\n\n\
+        "oride {VERSION} — TUI code editor\n\n\
          USAGE:\n\
+           oride [file]           open file (or empty buffer)\n\
            oride --version\n\
-           oride --demo\n\
-           oride <file> --stat\n\n\
-         Phase 0: buffer/document core only. TUI lands in P0.2."
+           oride --demo           headless core smoke\n\
+           oride <file> --stat    print line/byte stats\n\n\
+         KEYS (P0.2):\n\
+           Ctrl+S save · Ctrl+Z undo · Ctrl+Y redo\n\
+           arrows / Home / End · Esc or Ctrl+Q quit"
     );
 }
 

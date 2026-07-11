@@ -5,8 +5,8 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.1`** — Phase 0 scaffold (`oride-core` + headless CLI).
-TUI and IDE features land in later phases. Design: [`docs/design.md`](docs/design.md).
+Status: **`0.1.0-alpha.1`** — Phase **P0.2**: minimal TUI (open / edit / save / quit).
+Design: [`docs/design.md`](docs/design.md).
 
 ## Goals (0.1 “mini IDE”)
 
@@ -18,14 +18,26 @@ TUI and IDE features land in later phases. Design: [`docs/design.md`](docs/desig
 - OriScript intelligence via `oriscript lsp` (PATH)
 - Command palette, fuzzy open, find/replace, git status in tree
 
-## Build
+## Build & run
 
 ```bash
 cargo build --release
+./target/release/oride                  # empty buffer
+./target/release/oride path/to/file     # open file
 ./target/release/oride --version
 ./target/release/oride --demo
 ./target/release/oride README.md --stat
 ```
+
+### Keys (P0.2)
+
+| Key | Action |
+|-----|--------|
+| Type / Enter / Backspace / Delete | Edit |
+| Arrows, Home, End, PgUp/PgDn | Move |
+| `Ctrl+S` | Save (needs a path) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Esc` or `Ctrl+Q` | Quit (twice if dirty) |
 
 ```bash
 cargo test --workspace
@@ -38,7 +50,9 @@ cargo clippy --all-targets -- -D warnings
 ```text
 crates/
   oride-core/   # rope buffer, document, selection, undo (no UI)
-  oride/        # binary CLI (TUI coming in P0.2)
+  oride-ui/     # ratatui widgets (editor + status)
+  oride-app/    # event loop + key dispatch
+  oride/        # binary CLI
 docs/
   design.md     # architecture & roadmap
 ```

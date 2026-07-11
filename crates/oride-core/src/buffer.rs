@@ -90,7 +90,28 @@ impl Buffer {
         Ok(ByteOffset::new(line_start + byte_rel))
     }
 
-    /// Insere `text` em `at`. Retorna o texto inserido (owned) para undo.
+    /// Offset do início do caractere UTF-8 anterior a `offset` (ou 0).
+    pub fn prev_char_offset(&self, offset: ByteOffset) -> Result<ByteOffset, BufferError> {
+        self.ensure_offset_boundary(offset)?;
+        if offset.as_usize() == 0 {
+            return Ok(offset);
+        }
+        let char_idx = self.rope.byte_to_char(offset.as_usize());
+        Ok(ByteOffset::new(self.rope.char_to_byte(char_idx - 1)))
+    }
+
+    /// Offset do início do próximo caractere UTF-8 (ou fim do buffer).
+    pub fn next_char_offset(&self, offset: ByteOffset) -> Result<ByteOffset, BufferError> {
+        self.ensure_offset_boundary(offset)?;
+        if offset.as_usize() >= self.len_bytes() {
+            return Ok(offset);
+        }
+        let char_idx = self.rope.byte_to_char(offset.as_usize());
+        let next = (char_idx + 1).min(self.rope.len_chars());
+        Ok(ByteOffset::new(self.rope.char_to_byte(next)))
+    }
+
+    /// Insere `text` em `at`.
     pub fn insert(&mut self, at: ByteOffset, text: &str) -> Result<(), BufferError> {
         self.ensure_offset_boundary(at)?;
         let char_idx = self.rope.byte_to_char(at.as_usize());
