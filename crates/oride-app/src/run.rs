@@ -31,7 +31,7 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
         if event::poll(Duration::from_millis(200))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if let Some(cmd) = App::map_key(key) {
+                    if let Some(cmd) = app.map_key(key) {
                         app.apply(cmd);
                     }
                 }

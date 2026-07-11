@@ -8,4 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 oride-core = { workspace = true }
+oride-config = { workspace = true }
 ratatui = { workspace = true }
+thiserror = { workspace = true }

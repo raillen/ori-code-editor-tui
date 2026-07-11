@@ -1,0 +1,31 @@
+# Exemplo de config do Oride
+# Copie para:
+#   ~/.config/oride/config.toml     (usuário)
+#   .oride/config.toml              (projeto; sobrescreve usuário)
+
+theme = "default"
+show_line_numbers = true
+
+[editor]
+tab_size = 4
+insert_spaces = true
+
+# Cores: nomes (white, darkgray, reset, …) ou #RRGGBB
+[ui]
+background = "reset"
+foreground = "reset"
+line_number = "darkgray"
+status_bg = "darkgray"
+status_fg = "white"
+status_dirty = "yellow"
+cursor_bg = "white"
+cursor_fg = "black"
+gutter_width = 5
+
+# Chord → action (defaults embutidos; só sobrescreva o que quiser)
+[keys]
+"ctrl+s" = "save"
+"ctrl+q" = "quit"
+"esc" = "quit"
+"ctrl+z" = "undo"
+"ctrl+y" = "redo"

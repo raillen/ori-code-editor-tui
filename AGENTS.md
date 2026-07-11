@@ -15,15 +15,18 @@ Guia para agentes que implementam o editor TUI **Oride**.
 | Design | `docs/design.md` |
 | Versão | SemVer a partir de `0.1.0-alpha.x` |
 
-## Skills
+## Skills (obrigatórias neste repo)
 
 | Skill | Quando |
 |-------|--------|
-| **`rust`** | Todo código |
-| **`clean-code`** | Sempre |
-| **`living-docs`** | README / design / user-facing |
+| **`rust`** | Todo código (workspace, `Result`, clippy/fmt) |
+| **`clean-code`** | Módulos, nomes, KISS, anti-primitivo |
+| **`living-docs`** | README / `docs/` / comportamento user-facing |
 
-Não misturar lógica de UI (`ratatui`) em `oride-core`.
+**Não usar:** `compiler-dev`, `lang-interpreted`, `ori-testing` (são do monorepo OriScript).  
+Inteligência de linguagem virá via **LSP PATH** (`oriscript lsp`), não linkando `oris-*`.
+
+Não misturar lógica de UI (`ratatui`) em `oride-core` / `oride-config` / `oride-keymap`.
 
 ## Invariantes
 
@@ -45,7 +48,7 @@ cargo test --workspace
 
 | Fase | Foco |
 |------|------|
-| P0 | core + **TUI mínimo (P0.2 feito)** + config/keymap/theme (P0.3) |
+| P0 | core + TUI (P0.2) + **config/keymap/theme (P0.3)** |
 | P1 | tabs, árvore, terminal, palette |
 | P2 | tree-sitter + linguagens nativas |
 | P3 | LSP OriScript |

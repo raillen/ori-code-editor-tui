@@ -5,8 +5,9 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.1`** — Phase **P0.2**: minimal TUI (open / edit / save / quit).
-Design: [`docs/design.md`](docs/design.md).
+Status: **`0.1.0-alpha.1`** — Phase **P0.3**: TUI + **TOML config / keymaps / theme**.  
+Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
+Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md).
 
 ## Goals (0.1 “mini IDE”)
 
@@ -29,7 +30,7 @@ cargo build --release
 ./target/release/oride README.md --stat
 ```
 
-### Keys (P0.2)
+### Keys (defaults — rebind in TOML)
 
 | Key | Action |
 |-----|--------|
@@ -38,6 +39,17 @@ cargo build --release
 | `Ctrl+S` | Save (needs a path) |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Esc` or `Ctrl+Q` | Quit (twice if dirty) |
+
+### Config
+
+```bash
+mkdir -p ~/.config/oride
+cp assets/config.example.toml ~/.config/oride/config.toml
+# project overlay:
+mkdir -p .oride && cp assets/config.example.toml .oride/config.toml
+```
+
+See [`docs/config.md`](docs/config.md).
 
 ```bash
 cargo test --workspace
@@ -49,12 +61,15 @@ cargo clippy --all-targets -- -D warnings
 
 ```text
 crates/
-  oride-core/   # rope buffer, document, selection, undo (no UI)
-  oride-ui/     # ratatui widgets (editor + status)
-  oride-app/    # event loop + key dispatch
-  oride/        # binary CLI
+  oride-core/    # rope buffer, document, selection, undo (no UI)
+  oride-config/  # TOML load/merge
+  oride-keymap/  # chords → actions
+  oride-ui/      # ratatui widgets + theme
+  oride-app/     # event loop + key dispatch
+  oride/         # binary CLI
 docs/
-  design.md     # architecture & roadmap
+  design.md      # architecture & roadmap
+  config.md      # TOML reference
 ```
 
 ## Relation to OriScript

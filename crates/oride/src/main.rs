@@ -77,9 +77,10 @@ fn print_help() {
            oride --version\n\
            oride --demo           headless core smoke\n\
            oride <file> --stat    print line/byte stats\n\n\
-         KEYS (P0.2):\n\
+         KEYS (defaults; rebind in ~/.config/oride/config.toml):\n\
            Ctrl+S save · Ctrl+Z undo · Ctrl+Y redo\n\
-           arrows / Home / End · Esc or Ctrl+Q quit"
+           arrows / Home / End · Esc or Ctrl+Q quit\n\
+         Config: docs/config.md · assets/config.example.toml"
     );
 }
 

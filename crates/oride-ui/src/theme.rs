@@ -1,6 +1,10 @@
-//! Tema UI mínimo (P0.2 — cores fixas; TOML chega em P0.3).
+//! Tema UI — defaults e carga a partir de `ThemeUiConfig`.
 
+use oride_config::ThemeUiConfig;
 use ratatui::style::{Color, Style};
+use thiserror::Error;
+
+use crate::color::{parse_color, ColorParseError};
 
 #[derive(Debug, Clone, Copy)]
 pub struct UiTheme {
@@ -31,7 +35,30 @@ impl Default for UiTheme {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("theme field `{field}`: {source}")]
+pub struct ThemeBuildError {
+    pub field: &'static str,
+    #[source]
+    pub source: ColorParseError,
+}
+
 impl UiTheme {
+    /// Constrói tema a partir da seção `[ui]` da config.
+    pub fn from_config(cfg: &ThemeUiConfig) -> Result<Self, ThemeBuildError> {
+        Ok(Self {
+            background: parse_field("background", &cfg.background)?,
+            foreground: parse_field("foreground", &cfg.foreground)?,
+            line_number: parse_field("line_number", &cfg.line_number)?,
+            status_bg: parse_field("status_bg", &cfg.status_bg)?,
+            status_fg: parse_field("status_fg", &cfg.status_fg)?,
+            status_dirty: parse_field("status_dirty", &cfg.status_dirty)?,
+            cursor_bg: parse_field("cursor_bg", &cfg.cursor_bg)?,
+            cursor_fg: parse_field("cursor_fg", &cfg.cursor_fg)?,
+            gutter_width: cfg.gutter_width.max(1),
+        })
+    }
+
     #[must_use]
     pub fn editor_style(self) -> Style {
         Style::default().fg(self.foreground).bg(self.background)
@@ -51,4 +78,8 @@ impl UiTheme {
     pub fn cursor_style(self) -> Style {
         Style::default().fg(self.cursor_fg).bg(self.cursor_bg)
     }
+}
+
+fn parse_field(field: &'static str, value: &str) -> Result<Color, ThemeBuildError> {
+    parse_color(value).map_err(|source| ThemeBuildError { field, source })
 }

@@ -1,0 +1,11 @@
+[package]
+name = "oride-keymap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Key chords and action bindings for Oride"
+rust-version.workspace = true
+
+[dependencies]
+crossterm = { workspace = true }
+thiserror = { workspace = true }
