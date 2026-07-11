@@ -19,6 +19,10 @@ use oride_ui::{
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
 
+use crate::clipboard;
+use crate::find::FindState;
+use crate::session::Session;
+
 /// Comando aplicado ao documento (inclui insert de char).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyCommand {
@@ -36,9 +40,26 @@ pub enum Focus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Overlay {
     None,
-    CommandPalette { query: String, selected: usize },
-    OpenFile { query: String, selected: usize },
-    Prompt { kind: PromptKind, buffer: String },
+    CommandPalette {
+        query: String,
+        selected: usize,
+    },
+    OpenFile {
+        query: String,
+        selected: usize,
+    },
+    Prompt {
+        kind: PromptKind,
+        buffer: String,
+    },
+    Help,
+    Find,
+    /// `focus_replace`: false = editando find, true = editando replace.
+    Replace {
+        find: String,
+        replace: String,
+        focus_replace: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +98,7 @@ pub struct App {
     highlight: HighlightEngine,
     /// Soft wrap (default true em Markdown).
     soft_wrap: bool,
+    find: FindState,
 }
 
 impl App {
@@ -155,7 +177,48 @@ impl App {
             file_index,
             highlight: HighlightEngine::new(),
             soft_wrap: false,
+            find: FindState::default(),
         }
+    }
+
+    /// Restaura sessão salva se existir; senão buffer vazio no CWD.
+    pub fn new_empty_or_session() -> Self {
+        if let Some(session) = Session::load() {
+            if session.workspace.is_dir() {
+                let mut app = match Self::open_workspace(session.workspace.clone()) {
+                    Ok(a) => a,
+                    Err(_) => return Self::new_empty(),
+                };
+                for f in &session.files {
+                    if f.is_file() {
+                        let _ = app.store.open_path(f);
+                        let lang = detect_language(Some(f.as_path()));
+                        app.apply_language_defaults(lang);
+                    }
+                }
+                let paths = app.store.open_paths();
+                if !paths.is_empty() {
+                    let idx = session.active_index.min(paths.len() - 1);
+                    let _ = app.store.open_path(&paths[idx]);
+                }
+                app.set_status("sessão restaurada");
+                return app;
+            }
+        }
+        Self::new_empty()
+    }
+
+    pub fn persist_session(&self) {
+        let files = self.store.open_paths();
+        let active_index = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(|p| files.iter().position(|f| f == p)))
+            .flatten()
+            .unwrap_or(0);
+        let session = Session::from_workspace(&self.workspace, files, active_index);
+        let _ = session.save();
     }
 
     fn from_store(store: DocumentStore, workspace: PathBuf) -> Self {
@@ -218,7 +281,150 @@ impl App {
                 self.handle_prompt_key(key);
                 true
             }
+            Overlay::Help => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                    self.overlay = Overlay::None;
+                }
+                true
+            }
+            Overlay::Find => {
+                self.handle_find_key(key);
+                true
+            }
+            Overlay::Replace { .. } => {
+                self.handle_replace_key(key);
+                true
+            }
         }
+    }
+
+    fn handle_find_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+            }
+            KeyCode::Enter | KeyCode::F(3) => {
+                self.jump_find(true);
+            }
+            KeyCode::Backspace => {
+                self.find.query.pop();
+                self.recompute_find_and_jump();
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.find.query.push(c);
+                self.recompute_find_and_jump();
+            }
+            _ => {}
+        }
+        self.set_status(self.find.status());
+    }
+
+    fn handle_replace_key(&mut self, key: KeyEvent) {
+        let Overlay::Replace {
+            find,
+            replace,
+            focus_replace,
+        } = &self.overlay
+        else {
+            return;
+        };
+        let mut find = find.clone();
+        let mut replace = replace.clone();
+        let mut focus_replace = *focus_replace;
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                return;
+            }
+            KeyCode::Tab => {
+                focus_replace = !focus_replace;
+            }
+            KeyCode::Enter => {
+                self.find.query = find.clone();
+                self.recompute_find();
+                if let Some(at) = self.find.current_byte() {
+                    let qlen = self.find.query.len();
+                    if let Ok(doc) = self.store.active_mut() {
+                        let end = oride_core::ByteOffset::new(at.as_usize() + qlen);
+                        doc.set_selection(oride_core::Selection::new(at, end));
+                        let _ = doc.delete_selection();
+                        let _ = doc.insert_text(&replace);
+                    }
+                    self.recompute_find();
+                    self.jump_find(true);
+                    self.set_status(format!("replaced · {}", self.find.status()));
+                } else {
+                    self.set_status("replace: nenhuma ocorrência");
+                }
+                self.overlay = Overlay::Replace {
+                    find,
+                    replace,
+                    focus_replace,
+                };
+                return;
+            }
+            KeyCode::Backspace => {
+                if focus_replace {
+                    replace.pop();
+                } else {
+                    find.pop();
+                }
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if focus_replace {
+                    replace.push(c);
+                } else {
+                    find.push(c);
+                }
+            }
+            _ => {}
+        }
+        self.overlay = Overlay::Replace {
+            find,
+            replace,
+            focus_replace,
+        };
+    }
+
+    fn recompute_find(&mut self) {
+        let text = self
+            .store
+            .active()
+            .map(|d| d.buffer().as_string())
+            .unwrap_or_default();
+        self.find.recompute(&text);
+    }
+
+    fn recompute_find_and_jump(&mut self) {
+        self.recompute_find();
+        if let Some(b) = self.find.current_byte() {
+            if let Ok(doc) = self.store.active_mut() {
+                doc.jump_to_byte(b);
+            }
+            self.ensure_cursor_visible();
+        }
+    }
+
+    fn jump_find(&mut self, forward: bool) {
+        self.recompute_find();
+        let b = if forward {
+            self.find.next()
+        } else {
+            self.find.prev()
+        };
+        if let Some(b) = b {
+            if let Ok(doc) = self.store.active_mut() {
+                doc.jump_to_byte(b);
+            }
+            self.ensure_cursor_visible();
+        }
+        self.set_status(self.find.status());
     }
 
     fn handle_palette_key(&mut self, key: KeyEvent) {
@@ -611,6 +817,78 @@ impl App {
                     }
                     Err(e) => return Err(e),
                 }
+            }
+            Action::SaveAll => {
+                let (n, skip) = self.store.save_all();
+                self.refresh_git_and_index();
+                self.set_status(format!("save all: {n} ok · {skip} sem path"));
+            }
+            Action::Help => {
+                self.overlay = Overlay::Help;
+            }
+            Action::Find => {
+                self.overlay = Overlay::Find;
+                self.set_status(self.find.status());
+            }
+            Action::FindNext => {
+                self.jump_find(true);
+            }
+            Action::FindPrev => {
+                self.jump_find(false);
+            }
+            Action::Replace => {
+                self.overlay = Overlay::Replace {
+                    find: self.find.query.clone(),
+                    replace: String::new(),
+                    focus_replace: false,
+                };
+            }
+            Action::Copy => {
+                let text = self
+                    .store
+                    .active()
+                    .map(|d| {
+                        let s = d.selected_text();
+                        if s.is_empty() {
+                            d.caret()
+                                .ok()
+                                .and_then(|c| d.buffer().line_text(c.line).ok())
+                                .unwrap_or_default()
+                        } else {
+                            s
+                        }
+                    })
+                    .unwrap_or_default();
+                match clipboard::copy_text(&text) {
+                    Ok(()) => self.set_status(format!("copied {} bytes", text.len())),
+                    Err(e) => self.set_status(e),
+                }
+            }
+            Action::Paste => {
+                let text = clipboard::paste_text();
+                if text.is_empty() {
+                    self.set_status("clipboard vazio");
+                } else {
+                    self.store.active_mut()?.insert_text(&text)?;
+                    self.set_status(format!("pasted {} bytes", text.len()));
+                }
+            }
+            Action::Cut => {
+                let text = {
+                    let doc = self.store.active()?;
+                    let s = doc.selected_text();
+                    if s.is_empty() {
+                        self.set_status("nada selecionado para cortar");
+                        return Ok(());
+                    }
+                    s
+                };
+                if let Err(e) = clipboard::copy_text(&text) {
+                    self.set_status(e);
+                    return Ok(());
+                }
+                self.store.active_mut()?.delete_selection()?;
+                self.set_status(format!("cut {} bytes", text.len()));
             }
             Action::Undo => {
                 let doc = self.store.active_mut()?;
@@ -1093,6 +1371,50 @@ impl App {
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
+            Overlay::Help => {
+                let items: Vec<String> = HELP_LINES.iter().map(|s| (*s).to_string()).collect();
+                let view = PaletteView {
+                    title: "atalhos (Esc fecha)",
+                    query: "",
+                    items: &items,
+                    selected: 0,
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::Find => {
+                let items = [self.find.status()];
+                let view = PaletteView {
+                    title: "find (Enter/F3 próximo · Esc)",
+                    query: &self.find.query,
+                    items: &items,
+                    selected: 0,
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::Replace {
+                find,
+                replace,
+                focus_replace,
+            } => {
+                let field = if *focus_replace { "replace" } else { "find" };
+                let q = if *focus_replace {
+                    replace.as_str()
+                } else {
+                    find.as_str()
+                };
+                let items = [
+                    format!("find: {find}"),
+                    format!("replace: {replace}"),
+                    "Tab alterna campo · Enter substitui atual · Esc".into(),
+                ];
+                let view = PaletteView {
+                    title: &format!("replace [{field}]"),
+                    query: q,
+                    items: &items,
+                    selected: if *focus_replace { 1 } else { 0 },
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
         }
     }
 
@@ -1212,6 +1534,16 @@ fn build_default_keymap() -> Keymap {
     Keymap::from_string_map(defaults.keys.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .expect("default key bindings must parse")
 }
+
+const HELP_LINES: &[&str] = &[
+    "Ctrl+S save · Ctrl+Shift+S save all",
+    "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut",
+    "Ctrl+F find · F3/Shift+F3 next/prev · Ctrl+H replace",
+    "Ctrl+B tree · Ctrl+E editor · Ctrl+O open folder",
+    "Ctrl+P open file · Ctrl+Shift+P commands · Ctrl+G help",
+    "Alt+Z soft wrap · Ctrl+/ comment · Ctrl+` terminal",
+    "Ctrl+N/W tabs · Esc fecha overlay / desfaz foco",
+];
 
 fn fuzzy_match(query: &str, candidate: &str) -> bool {
     if query.is_empty() {

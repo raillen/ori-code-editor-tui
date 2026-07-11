@@ -11,7 +11,7 @@ Suporte nativo a Markdown e derivados (antes do LSP).
 | `.mdx` | `mdx` (highlight como MD) |
 | `README`, `CHANGELOG`, `LICENSE`, … | `markdown` |
 
-## Highlight
+## Highlight (atual)
 
 Pipeline **tree-sitter-md**:
 
@@ -21,7 +21,7 @@ Pipeline **tree-sitter-md**:
 
 Cores dedicadas: heading, emphasis, strong, link, code, list marker, quote.
 
-## Funções de edição
+## Funções de edição (atual)
 
 | Ação | Atalho default | Comportamento |
 |------|----------------|---------------|
@@ -32,18 +32,27 @@ Cores dedicadas: heading, emphasis, strong, link, code, list marker, quote.
 
 Também na command palette: **Toggle soft wrap**, **Toggle comment**.
 
-## Limitações
+## Limitações atuais
 
-- MDX: sem parse JSX (só highlight MD)
 - Soft wrap: scroll ainda é por linha lógica
-- Sem preview renderizado (pós-0.1)
-- Code fences não re-highlight a linguagem interna (P3+/injections)
+
+## Futuro (não no 0.1)
+
+Planejado **após** o freeze de polimento 0.1 / LSP básico — **não** bloquear o roadmap atual:
+
+| Item | Descrição | Quando (estimado) |
+|------|-----------|-------------------|
+| **Preview renderizado do Markdown** | Painel split (ou overlay) com HTML/ANSI renderizado do buffer `.md` | pós-0.1 (P1 design) |
+| **Highlight da linguagem dentro de code fences** | Injections tree-sitter: conteúdo de ` ```rust ` colorido com grammar da linguagem | pós-0.1 / polish syntax |
+| **Parse JSX real no MDX** | Grammar/injections para JSX em `.mdx` (não só highlight MD) | pós-0.1 language pack |
+
+Outros desejáveis MD (também futuros): wiki-links, frontmatter YAML colorido, outline de headings na palette.
 
 ## Validação
 
 ```bash
 cargo test -p oride-syntax
-# fixture mental:
+# fixture:
 # # Título
 # **bold** `code`
 # - item

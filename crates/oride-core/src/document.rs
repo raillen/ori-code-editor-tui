@@ -303,6 +303,26 @@ impl Document {
         self.mark_saved();
         Ok(())
     }
+
+    /// Texto da seleção (vazio se caret).
+    #[must_use]
+    pub fn selected_text(&self) -> String {
+        if self.selection.is_empty() {
+            return String::new();
+        }
+        self.buffer
+            .text_range(self.selection.start(), self.selection.end())
+            .unwrap_or_default()
+    }
+
+    /// Move o caret para `byte` (seleção colapsada).
+    pub fn jump_to_byte(&mut self, byte: ByteOffset) {
+        let len = self.buffer.len_bytes();
+        let b = ByteOffset::new(byte.as_usize().min(len));
+        self.selection = Selection::caret(b);
+        self.preferred_column = None;
+        self.undo.commit_group();
+    }
 }
 
 /// Coleção de documentos abertos + tab ativa.
@@ -466,6 +486,34 @@ impl DocumentStore {
             self.active = self.docs.last().map(|d| d.id);
         }
         Ok(dirty)
+    }
+
+    /// Salva todos os documentos com path. Retorna (salvos, sem_path).
+    pub fn save_all(&mut self) -> (usize, usize) {
+        let mut saved = 0usize;
+        let mut skipped = 0usize;
+        let ids: Vec<_> = self.docs.iter().map(|d| d.id).collect();
+        for id in ids {
+            if let Some(doc) = self.get_mut(id) {
+                if doc.path().is_none() {
+                    skipped += 1;
+                    continue;
+                }
+                if doc.save_to(None).is_ok() {
+                    saved += 1;
+                }
+            }
+        }
+        (saved, skipped)
+    }
+
+    /// Paths de abas abertas (ordem das tabs).
+    #[must_use]
+    pub fn open_paths(&self) -> Vec<PathBuf> {
+        self.docs
+            .iter()
+            .filter_map(|d| d.path().map(Path::to_path_buf))
+            .collect()
     }
 }
 

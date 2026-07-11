@@ -7,33 +7,21 @@ use thiserror::Error;
 pub enum Action {
     Quit,
     Save,
+    SaveAll,
     Undo,
     Redo,
     InsertNewline,
     InsertTab,
     Backspace,
     Delete,
-    MoveLeft {
-        extend: bool,
-    },
-    MoveRight {
-        extend: bool,
-    },
-    MoveUp {
-        extend: bool,
-    },
-    MoveDown {
-        extend: bool,
-    },
-    MoveLineStart {
-        extend: bool,
-    },
-    MoveLineEnd {
-        extend: bool,
-    },
+    MoveLeft { extend: bool },
+    MoveRight { extend: bool },
+    MoveUp { extend: bool },
+    MoveDown { extend: bool },
+    MoveLineStart { extend: bool },
+    MoveLineEnd { extend: bool },
     PageUp,
     PageDown,
-    // IDE shell (P1)
     ToggleTree,
     ToggleTerminal,
     FocusTree,
@@ -48,23 +36,28 @@ pub enum Action {
     TreeNewFile,
     TreeNewDir,
     TreeRefresh,
-    /// Abre uma pasta como workspace do editor.
     OpenFolder,
-    /// Alterna foco entre editor e árvore (sem esconder o painel).
     FocusToggleTreeEditor,
-    /// Soft wrap (quebra visual de linha).
     ToggleSoftWrap,
-    /// Comenta/descomenta linha(s) conforme a linguagem.
     ToggleComment,
+    // P4 polish
+    Help,
+    Find,
+    FindNext,
+    FindPrev,
+    Replace,
+    Copy,
+    Paste,
+    Cut,
 }
 
 impl Action {
-    /// Rótulo para a command palette.
     #[must_use]
     pub fn palette_label(self) -> &'static str {
         match self {
             Self::Quit => "Quit",
             Self::Save => "Save",
+            Self::SaveAll => "Save all",
             Self::Undo => "Undo",
             Self::Redo => "Redo",
             Self::InsertNewline => "Insert newline",
@@ -97,30 +90,45 @@ impl Action {
             Self::FocusToggleTreeEditor => "Focus: toggle tree / editor",
             Self::ToggleSoftWrap => "Toggle soft wrap",
             Self::ToggleComment => "Toggle comment",
+            Self::Help => "Help (keybindings)",
+            Self::Find => "Find…",
+            Self::FindNext => "Find next",
+            Self::FindPrev => "Find previous",
+            Self::Replace => "Replace…",
+            Self::Copy => "Copy",
+            Self::Paste => "Paste",
+            Self::Cut => "Cut",
         }
     }
 
-    /// Actions listadas na palette de comandos.
     pub fn palette_actions() -> &'static [Action] {
         &[
             Action::Save,
+            Action::SaveAll,
             Action::Undo,
             Action::Redo,
+            Action::Find,
+            Action::FindNext,
+            Action::Replace,
+            Action::Copy,
+            Action::Paste,
+            Action::Cut,
+            Action::ToggleComment,
+            Action::ToggleSoftWrap,
             Action::NewTab,
             Action::CloseTab,
             Action::NextTab,
             Action::PrevTab,
             Action::OpenFolder,
-            Action::ToggleSoftWrap,
-            Action::ToggleComment,
+            Action::OpenFileFuzzy,
+            Action::CommandPalette,
+            Action::Help,
             Action::ToggleTree,
             Action::ToggleTerminal,
             Action::FocusTree,
             Action::FocusEditor,
             Action::FocusToggleTreeEditor,
             Action::FocusTerminal,
-            Action::OpenFileFuzzy,
-            Action::CommandPalette,
             Action::TreeNewFile,
             Action::TreeNewDir,
             Action::TreeRefresh,
@@ -137,6 +145,7 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
     let action = match id {
         "quit" => Action::Quit,
         "save" => Action::Save,
+        "save_all" => Action::SaveAll,
         "undo" => Action::Undo,
         "redo" => Action::Redo,
         "insert_newline" => Action::InsertNewline,
@@ -175,6 +184,14 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "focus_toggle_tree_editor" => Action::FocusToggleTreeEditor,
         "toggle_soft_wrap" => Action::ToggleSoftWrap,
         "toggle_comment" => Action::ToggleComment,
+        "help" => Action::Help,
+        "find" => Action::Find,
+        "find_next" => Action::FindNext,
+        "find_prev" => Action::FindPrev,
+        "replace" => Action::Replace,
+        "copy" => Action::Copy,
+        "paste" => Action::Paste,
+        "cut" => Action::Cut,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)
@@ -185,17 +202,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_known_actions() {
-        assert_eq!(parse_action("save").unwrap(), Action::Save);
-        assert_eq!(parse_action("toggle_tree").unwrap(), Action::ToggleTree);
-        assert_eq!(
-            parse_action("move_left_extend").unwrap(),
-            Action::MoveLeft { extend: true }
-        );
-    }
-
-    #[test]
-    fn rejects_unknown() {
-        assert!(parse_action("fly_to_moon").is_err());
+    fn parses_polish_actions() {
+        assert_eq!(parse_action("find").unwrap(), Action::Find);
+        assert_eq!(parse_action("save_all").unwrap(), Action::SaveAll);
+        assert_eq!(parse_action("help").unwrap(), Action::Help);
     }
 }

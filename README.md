@@ -5,9 +5,9 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.3`** — Phase **P2**: tree-sitter syntax highlight (`.oris`, md, html, css, js).  
+Status: **`0.1.0-alpha.4`** — P2 + Markdown + **polimento** (find, clipboard, help, session).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
-Design: [`docs/design.md`](docs/design.md) · Config: [`docs/config.md`](docs/config.md) · Markdown: [`docs/markdown.md`](docs/markdown.md).
+Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/markdown.md) · [polish](docs/polish.md).
 
 ## Goals (0.1 “mini IDE”)
 
@@ -53,6 +53,11 @@ cargo build --release
 | `F5` | Refresh tree + git |
 | `Alt+Z` | Toggle soft wrap (default on for Markdown) |
 | `Ctrl+/` | Toggle line comment (`<!-- -->` in MD) |
+| `Ctrl+F` / `F3` | Find / next match |
+| `Ctrl+H` | Replace |
+| `Ctrl+C` / `V` / `X` | Copy / paste / cut |
+| `Ctrl+Shift+S` | Save all |
+| `Ctrl+G` | Help (keybindings) |
 | `Esc` or `Ctrl+Q` | Close overlay / unfocus / quit (2× if dirty) |
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  

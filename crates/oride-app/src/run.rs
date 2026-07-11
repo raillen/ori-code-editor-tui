@@ -13,7 +13,7 @@ use crate::terminal_guard::TerminalGuard;
 pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
     let mut app = match path {
         Some(p) => App::open_path(p).context("open path")?,
-        None => App::new_empty(),
+        None => App::new_empty_or_session(),
     };
 
     let mut guard = TerminalGuard::enter().context("enter terminal raw mode")?;
@@ -23,6 +23,7 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
         guard.terminal().draw(|frame| app.draw(frame))?;
 
         if app.should_quit {
+            app.persist_session();
             break;
         }
 

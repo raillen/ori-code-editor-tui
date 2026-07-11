@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+### Added (P4 polish)
+
+- Help overlay (`Ctrl+G`)
+- Find / find next-prev / replace (`Ctrl+F`, `F3`, `Ctrl+H`)
+- Clipboard copy/paste/cut (`Ctrl+C/V/X`) via arboard + fallback interno
+- Save all (`Ctrl+Shift+S`)
+- Session leve: restaura workspace e abas; salva ao sair
+- Docs: `docs/polish.md`; Markdown **futuro** (preview, fence HL, MDX JSX) em `docs/markdown.md`
+
 ## 0.1.0-alpha.3
 
 ### Added

@@ -125,6 +125,21 @@ impl Buffer {
         Ok(())
     }
 
+    /// Texto no intervalo semi-aberto `[start, end)` em bytes.
+    pub fn text_range(&self, start: ByteOffset, end: ByteOffset) -> Result<String, BufferError> {
+        if start > end {
+            return Err(BufferError::OffsetOutOfBounds {
+                offset: start.as_usize(),
+                len: self.len_bytes(),
+            });
+        }
+        self.ensure_offset_boundary(start)?;
+        self.ensure_offset_boundary(end)?;
+        let start_char = self.rope.byte_to_char(start.as_usize());
+        let end_char = self.rope.byte_to_char(end.as_usize());
+        Ok(self.rope.slice(start_char..end_char).to_string())
+    }
+
     /// Remove o intervalo semi-aberto `[start, end)` em bytes.
     /// Retorna o texto removido.
     pub fn delete_range(

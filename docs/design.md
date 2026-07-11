@@ -173,7 +173,9 @@ Prioridade para caber no 0.1 “IDE mini” sem virar monólito:
 | **Split horizontal/vertical de buffers** | Micro tem; complexifica layout — após layout estável |
 | **Search in project** (`rg` ou walk+grep) | “Find in files” |
 | **Multi-cursor** | Marca do Micro; caro em rope+LSP — pós-0.1 |
-| **Markdown preview** (split read-only) | Diferencial DX docs |
+| **Markdown preview** (split read-only) | Diferencial DX docs — ver `docs/markdown.md` § Futuro |
+| **Code-fence language highlight** | Injections em ` ```lang ` | 
+| **MDX com JSX real** | Além do highlight MD genérico |
 | **Git gutter** (linha) + stage hunk | Além do ícone na árvore |
 | **Format on save** | Via LSP `formatting` (já no OriScript) |
 | **Rename / new file from tree context** | UX árvore completa |

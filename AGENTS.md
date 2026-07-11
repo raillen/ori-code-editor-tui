@@ -50,6 +50,8 @@ cargo test --workspace
 |------|------|
 | P0 | core + TUI + config/keymap/theme |
 | P1 | tabs, árvore, terminal, palette (alpha.2) |
-| P2 | **tree-sitter highlight (alpha.3)** |
+| P2 | tree-sitter + Markdown rico (alpha.3) |
 | P3 | LSP OriScript |
-| P4 | polimento 0.1 |
+| P4 | **polimento 0.1** (help, find, clipboard, session, …) |
+
+Markdown futuro (preview, fence injections, MDX JSX): `docs/markdown.md` — **não** misturar no P3/P4.

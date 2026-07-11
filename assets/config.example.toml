@@ -25,7 +25,15 @@ gutter_width = 5
 # Chord → action (defaults embutidos; só sobrescreva o que quiser)
 [keys]
 "ctrl+s" = "save"
+"ctrl+shift+s" = "save_all"
 "ctrl+q" = "quit"
+"ctrl+f" = "find"
+"f3" = "find_next"
+"ctrl+h" = "replace"
+"ctrl+c" = "copy"
+"ctrl+v" = "paste"
+"ctrl+x" = "cut"
+"ctrl+g" = "help"
 "esc" = "quit"
 "ctrl+z" = "undo"
 "ctrl+y" = "redo"
