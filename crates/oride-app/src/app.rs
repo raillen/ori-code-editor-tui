@@ -1057,11 +1057,26 @@ impl App {
             Focus::Terminal => "term",
         };
         let lang = self.highlight.language().as_str();
+
+        // Caminho do item selecionado na árvore (localização clara)
+        let tree_sel = self.tree.as_ref().and_then(|t| {
+            t.selected_row().map(|r| {
+                let rel = r.path.strip_prefix(&self.workspace).unwrap_or(&r.path);
+                let kind = if r.is_dir { "dir" } else { "file" };
+                format!("▶ {kind}:{}", rel.display())
+            })
+        });
+
         let mut message = self.status_message.clone();
         if message.is_none() {
-            message = Some(format!(
-                "{focus} · {lang}{branch} · Ctrl+B árvore · Ctrl+E editor · Ctrl+O pasta · Ctrl+P arquivo"
-            ));
+            message = Some(match (self.focus, tree_sel) {
+                (Focus::Tree, Some(sel)) => {
+                    format!("{focus} · {sel} · ↑↓ navegar · Enter abrir · Ctrl+E editor")
+                }
+                _ => format!(
+                    "{focus} · {lang}{branch} · Ctrl+B árvore · Ctrl+E editor · Ctrl+O pasta"
+                ),
+            });
         }
         let status = StatusModel {
             title,

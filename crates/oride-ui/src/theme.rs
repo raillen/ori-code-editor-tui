@@ -125,21 +125,23 @@ impl UiTheme {
             .add_modifier(Modifier::REVERSED | Modifier::BOLD)
     }
 
-    /// Seleção da árvore quando o painel tem foco.
+    /// Seleção da árvore com foco — alto contraste (linha inteira).
+    ///
+    /// Cores explícitas (não `Reset`/`REVERSED`) para funcionar em dark e light terminals.
     #[must_use]
     pub fn tree_selection_focused(self) -> Style {
         Style::default()
-            .fg(self.cursor_fg)
-            .bg(self.cursor_bg)
-            .add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
     }
 
-    /// Seleção da árvore quando o painel NÃO tem foco (ainda visível).
+    /// Seleção da árvore sem foco — ainda legível, menos “ativa”.
     #[must_use]
     pub fn tree_selection_unfocused(self) -> Style {
         Style::default()
-            .fg(self.status_fg)
-            .bg(self.status_bg)
+            .fg(Color::White)
+            .bg(Color::DarkGray)
             .add_modifier(Modifier::BOLD)
     }
 
