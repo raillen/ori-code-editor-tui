@@ -167,3 +167,34 @@ mod tests {
         assert!(ctx.status.contains("lines=2"));
     }
 }
+
+/// Mostra o path do buffer ativo na status line.
+pub struct ShowPathPlugin;
+
+const SHOW_PATH_CMDS: &[CommandMeta] = &[CommandMeta {
+    id: "show_path",
+    label: "Plugin: show file path",
+    description: "Exibe o caminho do arquivo ativo",
+}];
+
+impl Plugin for ShowPathPlugin {
+    fn name(&self) -> &'static str {
+        "show-path"
+    }
+    fn commands(&self) -> &'static [CommandMeta] {
+        SHOW_PATH_CMDS
+    }
+    fn run_command(&self, id: &str, ctx: &mut dyn PluginCtx) -> PluginResult {
+        if id != "show_path" {
+            return Err(PluginError::UnknownCommand(id.into()));
+        }
+        match ctx.active_path() {
+            Some(p) => {
+                let msg = format!("path: {}", p.display());
+                ctx.set_status(&msg);
+            }
+            None => ctx.set_status("path: (untitled)"),
+        }
+        Ok(())
+    }
+}

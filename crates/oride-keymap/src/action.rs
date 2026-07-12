@@ -63,6 +63,14 @@ pub enum Action {
     LspGotoDefinition,
     LspFormat,
     ToggleDiagnostics,
+    // P9 splits + multi-cursor
+    SplitVertical,
+    SplitHorizontal,
+    FocusNextPane,
+    ClosePane,
+    AddCursorAbove,
+    AddCursorBelow,
+    ClearExtraCursors,
 }
 
 impl Action {
@@ -126,6 +134,13 @@ impl Action {
             Self::LspGotoDefinition => "LSP: go to definition",
             Self::LspFormat => "LSP: format document",
             Self::ToggleDiagnostics => "Toggle diagnostics panel",
+            Self::SplitVertical => "Split editor vertical",
+            Self::SplitHorizontal => "Split editor horizontal",
+            Self::FocusNextPane => "Focus next editor pane",
+            Self::ClosePane => "Close editor pane",
+            Self::AddCursorAbove => "Add cursor above",
+            Self::AddCursorBelow => "Add cursor below",
+            Self::ClearExtraCursors => "Clear extra cursors",
         }
     }
 
@@ -172,6 +187,13 @@ impl Action {
             Action::LspGotoDefinition,
             Action::LspFormat,
             Action::ToggleDiagnostics,
+            Action::SplitVertical,
+            Action::SplitHorizontal,
+            Action::FocusNextPane,
+            Action::ClosePane,
+            Action::AddCursorAbove,
+            Action::AddCursorBelow,
+            Action::ClearExtraCursors,
             Action::Quit,
         ]
     }
@@ -248,6 +270,13 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "lsp_goto_definition" => Action::LspGotoDefinition,
         "lsp_format" => Action::LspFormat,
         "toggle_diagnostics" => Action::ToggleDiagnostics,
+        "split_vertical" => Action::SplitVertical,
+        "split_horizontal" => Action::SplitHorizontal,
+        "focus_next_pane" => Action::FocusNextPane,
+        "close_pane" => Action::ClosePane,
+        "add_cursor_above" => Action::AddCursorAbove,
+        "add_cursor_below" => Action::AddCursorBelow,
+        "clear_extra_cursors" => Action::ClearExtraCursors,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)

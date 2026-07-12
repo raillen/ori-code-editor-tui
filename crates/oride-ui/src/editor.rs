@@ -5,7 +5,7 @@ use oride_syntax::{line_spans, HighlightKind, HighlightSpan};
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::theme::UiTheme;
@@ -16,6 +16,8 @@ pub struct EditorView<'a> {
     pub caret: Caret,
     /// Seleção atual (anchor/head em bytes).
     pub selection: Selection,
+    /// Cursores extras (multi-cursor), como carets linha/coluna.
+    pub extra_carets: &'a [Caret],
     /// Primeira **linha lógica** visível (0-based).
     pub scroll_y: usize,
     pub show_line_numbers: bool,
@@ -23,11 +25,14 @@ pub struct EditorView<'a> {
     pub show_cursor: bool,
     /// Quebra visual de linhas longas (Markdown default).
     pub soft_wrap: bool,
+    /// Borda do painel quando em split focado.
+    pub focused_pane: bool,
 }
 
 struct CursorPaint {
     spans: Vec<Span<'static>>,
-    cursor_col: u16,
+    /// Coluna do caret primário no chunk (para set_cursor_position).
+    primary_cursor_col: Option<u16>,
 }
 
 #[derive(Clone, Copy)]
@@ -56,20 +61,46 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
         return;
     }
 
+    let border = if view.focused_pane {
+        Borders::ALL
+    } else {
+        Borders::NONE
+    };
+    let block = Block::default()
+        .borders(border)
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(theme.editor_style());
+    let inner = if view.focused_pane {
+        let i = block.inner(area);
+        frame.render_widget(block, area);
+        i
+    } else {
+        area
+    };
+
     let gutter = if view.show_line_numbers {
-        theme.gutter_width.min(area.width)
+        theme.gutter_width.min(inner.width)
     } else {
         0
     };
-    let text_width = area.width.saturating_sub(gutter) as usize;
+    let text_width = inner.width.saturating_sub(gutter) as usize;
     if text_width == 0 {
         return;
     }
-    let visible_rows = area.height as usize;
+    let visible_rows = inner.height as usize;
     let line_count = view.buffer.line_count().max(1);
     let start = view.scroll_y.min(line_count.saturating_sub(1));
 
     let sel = SelPaint::from_selection(view.selection);
+    let extra_cols_on_line: Vec<(usize, usize)> = view
+        .extra_carets
+        .iter()
+        .map(|c| (c.line, c.column))
+        .collect();
 
     let mut cursor_pos: Option<Position> = None;
     let mut lines: Vec<Line> = Vec::with_capacity(visible_rows);
@@ -84,9 +115,16 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
             .map(|o| o.as_usize())
             .unwrap_or(0);
 
+        let primary_on_line = view.show_cursor && logical == view.caret.line;
+        let extras_on_line: Vec<usize> = extra_cols_on_line
+            .iter()
+            .filter(|(l, _)| *l == logical)
+            .map(|(_, c)| *c)
+            .collect();
+
         let chunks = if view.soft_wrap {
             wrap_chunks(&content, text_width)
-        } else if view.show_cursor && logical == view.caret.line {
+        } else if primary_on_line {
             let col = view.caret.column.min(content.chars().count());
             let hscroll = col.saturating_sub(text_width.saturating_sub(1));
             vec![chunk_from_col(&content, hscroll, text_width)]
@@ -101,7 +139,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
 
             let col_offset: usize = if view.soft_wrap {
                 wi * text_width
-            } else if view.show_cursor && logical == view.caret.line {
+            } else if primary_on_line {
                 let col = view.caret.column.min(content.chars().count());
                 col.saturating_sub(text_width.saturating_sub(1))
             } else {
@@ -134,30 +172,42 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
                 Span::raw("")
             };
 
-            let on_cursor_line = view.show_cursor && logical == view.caret.line;
-            let caret_in_chunk = on_cursor_line
+            let caret_in_chunk = primary_on_line
                 && view.caret.column >= col_offset
                 && (view.soft_wrap && view.caret.column < col_offset + text_width
                     || !view.soft_wrap
                     || wi == chunks.len() - 1 && view.caret.column >= col_offset);
 
             let mut spans = vec![gutter_span];
-            if on_cursor_line && caret_in_chunk {
-                let local_col = view.caret.column.saturating_sub(col_offset);
-                let painted = paint_chunk_with_cursor(
+            let extra_locals: Vec<usize> = extras_on_line
+                .iter()
+                .filter(|c| **c >= col_offset && **c < col_offset + text_width)
+                .map(|c| c.saturating_sub(col_offset))
+                .collect();
+
+            if caret_in_chunk || !extra_locals.is_empty() {
+                let local_col = if caret_in_chunk {
+                    Some(view.caret.column.saturating_sub(col_offset))
+                } else {
+                    None
+                };
+                let painted = paint_chunk_with_carets(
                     chunk,
                     chunk_byte,
                     local_col,
+                    &extra_locals,
                     text_width,
                     view.highlights,
                     theme,
                     sel,
                 );
                 spans.extend(painted.spans);
-                let x = area.x + gutter + painted.cursor_col;
-                let y = area.y + visual_row as u16;
-                if x < area.x + area.width && y < area.y + area.height {
-                    cursor_pos = Some(Position { x, y });
+                if let Some(cc) = painted.primary_cursor_col {
+                    let x = inner.x + gutter + cc;
+                    let y = inner.y + visual_row as u16;
+                    if x < inner.x + inner.width && y < inner.y + inner.height {
+                        cursor_pos = Some(Position { x, y });
+                    }
                 }
             } else {
                 spans.extend(paint_highlighted_line(
@@ -178,13 +228,13 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
 
     while lines.len() < visible_rows {
         lines.push(Line::from(Span::styled(
-            " ".repeat(area.width as usize),
+            " ".repeat(inner.width as usize),
             theme.editor_style(),
         )));
     }
 
     let widget = Paragraph::new(lines).block(Block::default().style(theme.editor_style()));
-    frame.render_widget(widget, area);
+    frame.render_widget(widget, inner);
 
     if let Some(pos) = cursor_pos {
         frame.set_cursor_position(pos);
@@ -236,7 +286,17 @@ fn paint_highlighted_line(
     }
     // Pintura char-a-char quando há seleção para bg contínuo multi-linha
     if sel.active {
-        return paint_chars(content, line_byte, text_width, highlights, theme, None, sel).spans;
+        return paint_chars(
+            content,
+            line_byte,
+            text_width,
+            highlights,
+            theme,
+            None,
+            &[],
+            sel,
+        )
+        .spans;
     }
     let segs = if content.is_empty() {
         Vec::new()
@@ -266,10 +326,12 @@ fn paint_highlighted_line(
     spans
 }
 
-fn paint_chunk_with_cursor(
+#[allow(clippy::too_many_arguments)]
+fn paint_chunk_with_carets(
     content: &str,
     line_byte: usize,
-    column: usize,
+    primary_col: Option<usize>,
+    extra_cols: &[usize],
     text_width: usize,
     highlights: &[HighlightSpan],
     theme: &UiTheme,
@@ -281,31 +343,38 @@ fn paint_chunk_with_cursor(
         text_width,
         highlights,
         theme,
-        Some(column),
+        primary_col,
+        extra_cols,
         sel,
     )
 }
 
+fn secondary_cursor_style() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn paint_chars(
     content: &str,
     line_byte: usize,
     text_width: usize,
     highlights: &[HighlightSpan],
     theme: &UiTheme,
-    cursor_col: Option<usize>,
+    primary_col: Option<usize>,
+    extra_cols: &[usize],
     sel: SelPaint,
 ) -> CursorPaint {
     if text_width == 0 {
         return CursorPaint {
             spans: Vec::new(),
-            cursor_col: 0,
+            primary_cursor_col: None,
         };
     }
 
     let chars: Vec<char> = content.chars().collect();
-    let col = cursor_col.unwrap_or(usize::MAX).min(chars.len());
-    let cursor_local = if cursor_col.is_some() { col as u16 } else { 0 };
-
     let mut spans = Vec::new();
     let mut byte_off = line_byte;
     for (i, ch) in chars.iter().enumerate() {
@@ -313,8 +382,10 @@ fn paint_chars(
             break;
         }
         let kind = kind_at(byte_off, highlights);
-        let style = if cursor_col.is_some() && i == col {
+        let style = if primary_col == Some(i) {
             theme.cursor_style()
+        } else if extra_cols.contains(&i) {
+            secondary_cursor_style()
         } else if sel.contains(byte_off) {
             selection_style(theme)
         } else {
@@ -325,17 +396,17 @@ fn paint_chars(
     }
 
     let mut painted = chars.len().min(text_width);
-    if cursor_col.is_some() && col >= chars.len() && painted < text_width {
-        let style = if sel.contains(byte_off) {
-            selection_style(theme)
-        } else {
+    let eol_primary = primary_col.is_some_and(|c| c >= chars.len());
+    let eol_extra = extra_cols.iter().any(|&c| c >= chars.len());
+    if (eol_primary || eol_extra) && painted < text_width {
+        let style = if eol_primary {
             theme.cursor_style()
+        } else {
+            secondary_cursor_style()
         };
         spans.push(Span::styled(" ".to_string(), style));
         painted += 1;
     }
-    // Preenche resto da linha: se a seleção cruza o fim da linha (multi-linha),
-    // pinta o padding com cor de seleção (estilo VS Code).
     if painted < text_width {
         let pad = text_width - painted;
         let rest_selected = sel.contains(byte_off);
@@ -347,12 +418,14 @@ fn paint_chars(
         spans.push(Span::styled(" ".repeat(pad), style));
     }
     if spans.is_empty() {
-        let style = if cursor_col.is_some() {
-            theme.cursor_style()
-        } else {
-            theme.editor_style()
-        };
-        spans.push(Span::styled(" ".to_string(), style));
+        spans.push(Span::styled(
+            " ".to_string(),
+            if primary_col.is_some() {
+                theme.cursor_style()
+            } else {
+                theme.editor_style()
+            },
+        ));
         if text_width > 1 {
             spans.push(Span::styled(
                 " ".repeat(text_width - 1),
@@ -361,9 +434,11 @@ fn paint_chars(
         }
     }
 
+    let primary_cursor_col =
+        primary_col.map(|c| (c as u16).min(text_width.saturating_sub(1) as u16));
     CursorPaint {
         spans,
-        cursor_col: cursor_local.min(text_width.saturating_sub(1) as u16),
+        primary_cursor_col,
     }
 }
 
@@ -418,8 +493,8 @@ mod tests {
             start: 0,
             end: 0,
         };
-        let painted = paint_chunk_with_cursor("hello", 0, 2, 20, &[], &theme, sel);
-        assert_eq!(painted.cursor_col, 2);
+        let painted = paint_chunk_with_carets("hello", 0, Some(2), &[], 20, &[], &theme, sel);
+        assert_eq!(painted.primary_cursor_col, Some(2));
         assert_eq!(painted.spans[2].content.as_ref(), "l");
     }
 
@@ -432,7 +507,7 @@ mod tests {
             start: 1,
             end: 4,
         };
-        let painted = paint_chunk_with_cursor("hello", 0, 0, 20, &[], &theme, sel);
+        let painted = paint_chunk_with_carets("hello", 0, Some(0), &[], 20, &[], &theme, sel);
         assert_eq!(painted.spans[1].style.bg, Some(Color::Blue));
         assert_eq!(painted.spans[2].style.bg, Some(Color::Blue));
         assert_eq!(painted.spans[3].style.bg, Some(Color::Blue));

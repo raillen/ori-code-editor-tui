@@ -30,6 +30,7 @@ use crate::clipboard;
 use crate::disk_watch::DiskWatch;
 use crate::find::FindState;
 use crate::session::Session;
+use crate::split::{SplitOrientation, SplitState};
 
 /// Comando aplicado ao documento (inclui insert de char).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +135,7 @@ pub struct App {
     lsp_doc_version: i32,
     pending_reload: Option<PathBuf>,
     plugin_host: PluginHost,
+    split: SplitState,
 }
 
 impl App {
@@ -214,6 +216,9 @@ impl App {
             None
         };
 
+        let active_id = store
+            .active_id()
+            .unwrap_or_else(|| oride_core::DocumentId::from_raw(0));
         Self {
             store,
             scroll_y: 0,
@@ -251,6 +256,7 @@ impl App {
             lsp_doc_version: 1,
             pending_reload: None,
             plugin_host: builtin_host(),
+            split: SplitState::single(active_id),
         }
     }
 
@@ -1573,6 +1579,47 @@ impl App {
             Action::LspHover => self.lsp_hover()?,
             Action::LspGotoDefinition => self.lsp_goto()?,
             Action::LspFormat => self.lsp_format()?,
+            Action::SplitVertical => self.split_editor(SplitOrientation::Vertical),
+            Action::SplitHorizontal => self.split_editor(SplitOrientation::Horizontal),
+            Action::FocusNextPane => self.focus_next_pane(),
+            Action::ClosePane => {
+                if self.split.close_focused() {
+                    let id = self.split.focused_pane().doc_id;
+                    let _ = self.store.set_active(id);
+                    self.scroll_y = self.split.focused_pane().scroll_y;
+                    self.set_status("pane closed");
+                } else {
+                    self.set_status("já em pane único");
+                }
+            }
+            Action::AddCursorAbove => {
+                self.store.active_mut()?.add_cursor_above()?;
+                self.set_status(format!(
+                    "cursors: {}",
+                    1 + self
+                        .store
+                        .active()
+                        .map(|d| d.extra_carets().len())
+                        .unwrap_or(0)
+                ));
+            }
+            Action::AddCursorBelow => {
+                self.store.active_mut()?.add_cursor_below()?;
+                self.set_status(format!(
+                    "cursors: {}",
+                    1 + self
+                        .store
+                        .active()
+                        .map(|d| d.extra_carets().len())
+                        .unwrap_or(0)
+                ));
+            }
+            Action::ClearExtraCursors => {
+                if let Ok(d) = self.store.active_mut() {
+                    d.clear_extra_carets();
+                }
+                self.set_status("multi-cursor limpo");
+            }
 
             Action::FocusTree => {
                 self.show_tree = true;
@@ -1651,10 +1698,16 @@ impl App {
             Action::NextTab => {
                 self.store.activate_next_tab();
                 self.scroll_y = 0;
+                if let Some(id) = self.store.active_id() {
+                    self.split.set_focused_doc(id);
+                }
             }
             Action::PrevTab => {
                 self.store.activate_prev_tab();
                 self.scroll_y = 0;
+                if let Some(id) = self.store.active_id() {
+                    self.split.set_focused_doc(id);
+                }
             }
             Action::NewTab => {
                 self.store.open_empty();
@@ -1826,6 +1879,41 @@ impl App {
             }
             Err(e) => self.set_status(format!("plugin: {e}")),
         }
+    }
+
+    fn split_editor(&mut self, orientation: SplitOrientation) {
+        let id = match self.store.active_id() {
+            Some(id) => id,
+            None => {
+                self.set_status("sem documento");
+                return;
+            }
+        };
+        // sync scroll into focused pane first
+        self.split.sync_scroll(self.scroll_y);
+        self.split.split(orientation, id);
+        let _ = self.store.set_active(id);
+        self.set_status(match orientation {
+            SplitOrientation::Vertical => "split vertical · F6 / Ctrl+Alt+←→ troca pane",
+            SplitOrientation::Horizontal => "split horizontal · F6 troca pane",
+        });
+    }
+
+    fn focus_next_pane(&mut self) {
+        if !self.split.is_split() {
+            self.set_status("sem split");
+            return;
+        }
+        self.split.sync_scroll(self.scroll_y);
+        self.split.focus_next();
+        let pane = self.split.focused_pane().clone();
+        let _ = self.store.set_active(pane.doc_id);
+        self.scroll_y = pane.scroll_y;
+        self.set_status(format!(
+            "pane {}/{}",
+            self.split.focused + 1,
+            self.split.panes.len()
+        ));
     }
 
     fn fire_plugin_hook(&mut self, hook: PluginHook) {
@@ -2203,7 +2291,9 @@ impl App {
 
         let show_preview = self.show_md_preview && lang.is_markdown_family();
         let body = chunks[1];
-        let (editor_area, preview_area) = if show_preview {
+
+        // Área do editor (pode ser split em 2 panes) + preview MD opcional
+        let (editor_zone, preview_area) = if show_preview {
             let split = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
@@ -2213,30 +2303,70 @@ impl App {
             (body, None)
         };
 
-        self.last_editor_height = editor_area.height as usize;
-        self.ensure_cursor_visible();
+        self.split.sync_scroll(self.scroll_y);
+        let pane_areas: Vec<Rect> = if self.split.is_split() {
+            let orient = match self.split.orientation {
+                SplitOrientation::Vertical => Direction::Horizontal,
+                SplitOrientation::Horizontal => Direction::Vertical,
+            };
+            Layout::default()
+                .direction(orient)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(editor_zone)
+                .to_vec()
+        } else {
+            vec![editor_zone]
+        };
 
-        let doc = match self.store.active() {
-            Ok(d) => d,
-            Err(_) => return,
-        };
-        let caret = doc.caret().unwrap_or_default();
-        let selection = doc.selection();
-        let view = EditorView {
-            buffer: doc.buffer(),
-            caret,
-            selection,
-            scroll_y: self.scroll_y,
-            show_line_numbers: self.show_line_numbers,
-            highlights: self.highlight.spans(),
-            show_cursor: self.focus == Focus::Editor && matches!(self.overlay, Overlay::None),
-            soft_wrap: self.soft_wrap,
-        };
-        render_editor(frame, editor_area, &view, &self.theme);
+        // altura do pane focado para page up/down
+        if let Some(a) = pane_areas.get(self.split.focused) {
+            self.last_editor_height = a.height as usize;
+        }
+        self.ensure_cursor_visible();
+        self.split.sync_scroll(self.scroll_y);
+
+        for (i, pane_area) in pane_areas.iter().enumerate() {
+            let pane = &self.split.panes[i.min(self.split.panes.len() - 1)];
+            let Some(doc) = self.store.get(pane.doc_id) else {
+                continue;
+            };
+            let caret = doc.caret().unwrap_or_default();
+            let selection = doc.selection();
+            let extra: Vec<_> = doc
+                .extra_carets()
+                .iter()
+                .filter_map(|b| doc.buffer().byte_to_caret(*b).ok())
+                .collect();
+            // highlight por documento: recompute se não for o ativo
+            let lang_p = detect_language(doc.path());
+            let source_p = doc.buffer().as_string();
+            // use engine only for focused to avoid thrash; others re-highlight cheaply
+            let highlights = if i == self.split.focused {
+                self.highlight.update(lang_p, &source_p);
+                self.highlight.spans()
+            } else {
+                // empty highlights for secondary to keep simple
+                &[]
+            };
+            let view = EditorView {
+                buffer: doc.buffer(),
+                caret,
+                selection,
+                extra_carets: &extra,
+                scroll_y: pane.scroll_y,
+                show_line_numbers: self.show_line_numbers,
+                highlights,
+                show_cursor: self.focus == Focus::Editor
+                    && matches!(self.overlay, Overlay::None)
+                    && i == self.split.focused,
+                soft_wrap: self.soft_wrap,
+                focused_pane: self.split.is_split() && i == self.split.focused,
+            };
+            render_editor(frame, *pane_area, &view, &self.theme);
+        }
 
         if let Some(prev_area) = preview_area {
             let lines = render_preview_lines(&source);
-            // clamp scroll
             if self.preview_scroll >= lines.len() && !lines.is_empty() {
                 self.preview_scroll = lines.len() - 1;
             }

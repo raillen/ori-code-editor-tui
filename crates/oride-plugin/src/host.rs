@@ -4,7 +4,8 @@ use oride_syntax::LanguageId;
 
 use crate::language::{builtin_languages, provider_for, LanguageProvider};
 use crate::plugin::{
-    CommandMeta, LifecyclePlugin, Plugin, PluginCtx, PluginHook, PluginResult, WordCountPlugin,
+    CommandMeta, LifecyclePlugin, Plugin, PluginCtx, PluginHook, PluginResult, ShowPathPlugin,
+    WordCountPlugin,
 };
 
 /// Host embutido no binário.
@@ -90,6 +91,7 @@ pub fn builtin_host() -> PluginHost {
         builtin_languages(),
         vec![
             Box::new(WordCountPlugin),
+            Box::new(ShowPathPlugin),
             Box::new(LifecyclePlugin { announce: false }),
         ],
     )

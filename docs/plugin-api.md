@@ -52,6 +52,7 @@ Hooks: `OnOpen` (após defaults de linguagem ao abrir), `OnSave` (após save ok)
 | Plugin | Comandos | Hooks |
 |--------|----------|--------|
 | `word-count` | **Plugin: word count** (palette) | — |
+| `show-path` | **Plugin: show file path** (palette) | — |
 | `lifecycle` | — | silencioso (pode anunciar em testes) |
 
 ## Command palette

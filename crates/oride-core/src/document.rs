@@ -18,6 +18,12 @@ impl DocumentId {
     pub const fn as_u64(self) -> u64 {
         self.0
     }
+
+    /// Construtor para testes / split state.
+    #[must_use]
+    pub const fn from_raw(id: u64) -> Self {
+        Self(id)
+    }
 }
 
 /// Resumo de uma tab para a UI.
@@ -48,6 +54,8 @@ pub struct Document {
     path: Option<PathBuf>,
     buffer: Buffer,
     selection: Selection,
+    /// Cursores extras (byte offsets); o primário é `selection.head`.
+    extra_carets: Vec<ByteOffset>,
     undo: UndoStack,
     dirty: bool,
     /// Coluna preferida ao mover ↑/↓ (estilo editores clássicos).
@@ -82,6 +90,7 @@ impl Document {
 
     pub fn set_selection(&mut self, selection: Selection) {
         self.selection = selection;
+        self.extra_carets.clear();
         self.preferred_column = None;
         self.undo.commit_group();
     }
@@ -91,8 +100,71 @@ impl Document {
         Ok(self.buffer.byte_to_caret(self.selection.head)?)
     }
 
+    /// Cursores extras (além do primário), em ordem de inserção.
+    #[must_use]
+    pub fn extra_carets(&self) -> &[ByteOffset] {
+        &self.extra_carets
+    }
+
+    /// Todos os heads (primário + extras), ordenados por offset crescente.
+    #[must_use]
+    pub fn all_caret_offsets(&self) -> Vec<ByteOffset> {
+        let mut v = vec![self.selection.head];
+        v.extend_from_slice(&self.extra_carets);
+        v.sort_by_key(|b| b.as_usize());
+        v.dedup();
+        v
+    }
+
+    pub fn clear_extra_carets(&mut self) {
+        self.extra_carets.clear();
+    }
+
+    /// Adiciona caret uma linha acima (mesma coluna preferida).
+    pub fn add_cursor_above(&mut self) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        if caret.line == 0 {
+            return Ok(());
+        }
+        let col = self.preferred_column.unwrap_or(caret.column);
+        self.preferred_column = Some(col);
+        let target = Caret::new(caret.line - 1, col);
+        let off = self.buffer.caret_to_byte(target)?;
+        self.push_extra_caret(off);
+        Ok(())
+    }
+
+    /// Adiciona caret uma linha abaixo.
+    pub fn add_cursor_below(&mut self) -> Result<(), DocumentError> {
+        let caret = self.buffer.byte_to_caret(self.selection.head)?;
+        let last = self.buffer.line_count().saturating_sub(1);
+        if caret.line >= last {
+            return Ok(());
+        }
+        let col = self.preferred_column.unwrap_or(caret.column);
+        self.preferred_column = Some(col);
+        let target = Caret::new(caret.line + 1, col);
+        let off = self.buffer.caret_to_byte(target)?;
+        self.push_extra_caret(off);
+        Ok(())
+    }
+
+    fn push_extra_caret(&mut self, off: ByteOffset) {
+        if off == self.selection.head {
+            return;
+        }
+        if !self.extra_carets.contains(&off) {
+            self.extra_carets.push(off);
+        }
+    }
+
     fn move_head_to(&mut self, head: ByteOffset, extend: bool) {
         self.selection = self.selection.move_head(head, extend);
+        if !extend {
+            // movimento sem extend colapsa multi-cursor (estilo VS Code com setas)
+            // exceto se quiséssemos mover todos — por simplicidade limpa extras
+            self.extra_carets.clear();
+        }
         self.undo.commit_group();
     }
 
@@ -180,6 +252,7 @@ impl Document {
     pub fn select_all(&mut self) {
         let end = ByteOffset::new(self.buffer.len_bytes());
         self.selection = Selection::new(ByteOffset::new(0), end);
+        self.extra_carets.clear();
         self.preferred_column = None;
         self.undo.commit_group();
     }
@@ -197,7 +270,11 @@ impl Document {
     }
 
     /// Insere texto na posição do caret (substitui seleção se houver).
+    /// Com multi-cursor: insere em todos os carets (do fim para o início).
     pub fn insert_text(&mut self, text: &str) -> Result<(), DocumentError> {
+        if !self.extra_carets.is_empty() && self.selection.is_empty() {
+            return self.insert_text_multi(text);
+        }
         if !self.selection.is_empty() {
             self.delete_selection()?;
         }
@@ -213,10 +290,35 @@ impl Document {
         Ok(())
     }
 
+    fn insert_text_multi(&mut self, text: &str) -> Result<(), DocumentError> {
+        let mut carets = self.all_caret_offsets();
+        // do maior offset para o menor para não invalidar
+        carets.sort_by_key(|b| std::cmp::Reverse(b.as_usize()));
+        let mut new_offsets = Vec::with_capacity(carets.len());
+        for at in carets {
+            self.buffer.insert(at, text)?;
+            self.undo.push_applied(Edit::Insert {
+                at,
+                text: text.to_string(),
+            });
+            new_offsets.push(ByteOffset::new(at.as_usize() + text.len()));
+        }
+        new_offsets.sort_by_key(|b| b.as_usize());
+        if let Some((first, rest)) = new_offsets.split_first() {
+            self.selection = Selection::caret(*first);
+            self.extra_carets = rest.to_vec();
+        }
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Apaga a seleção atual, ou o caractere anterior se vazia (backspace).
     pub fn backspace(&mut self) -> Result<(), DocumentError> {
         if !self.selection.is_empty() {
             return self.delete_selection();
+        }
+        if !self.extra_carets.is_empty() {
+            return self.backspace_multi();
         }
         let end = self.selection.head;
         if end.as_usize() == 0 {
@@ -234,10 +336,41 @@ impl Document {
         Ok(())
     }
 
+    fn backspace_multi(&mut self) -> Result<(), DocumentError> {
+        let mut carets = self.all_caret_offsets();
+        carets.sort_by_key(|b| std::cmp::Reverse(b.as_usize()));
+        let mut new_offsets = Vec::new();
+        for end in carets {
+            if end.as_usize() == 0 {
+                new_offsets.push(end);
+                continue;
+            }
+            let start = self.buffer.prev_char_offset(end)?;
+            let removed = self.buffer.delete_range(start, end)?;
+            self.undo.push_applied(Edit::Delete {
+                at: start,
+                text: removed,
+            });
+            new_offsets.push(start);
+        }
+        new_offsets.sort_by_key(|b| b.as_usize());
+        new_offsets.dedup();
+        if let Some((first, rest)) = new_offsets.split_first() {
+            self.selection = Selection::caret(*first);
+            self.extra_carets = rest.to_vec();
+        }
+        self.preferred_column = None;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Delete à frente do caret (ou a seleção).
     pub fn delete_forward(&mut self) -> Result<(), DocumentError> {
         if !self.selection.is_empty() {
             return self.delete_selection();
+        }
+        if !self.extra_carets.is_empty() {
+            return self.delete_forward_multi();
         }
         let start = self.selection.head;
         if start.as_usize() >= self.buffer.len_bytes() {
@@ -249,6 +382,34 @@ impl Document {
             at: start,
             text: removed,
         });
+        self.preferred_column = None;
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn delete_forward_multi(&mut self) -> Result<(), DocumentError> {
+        let mut carets = self.all_caret_offsets();
+        carets.sort_by_key(|b| std::cmp::Reverse(b.as_usize()));
+        let mut new_offsets = Vec::new();
+        for start in carets {
+            if start.as_usize() >= self.buffer.len_bytes() {
+                new_offsets.push(start);
+                continue;
+            }
+            let end = self.buffer.next_char_offset(start)?;
+            let removed = self.buffer.delete_range(start, end)?;
+            self.undo.push_applied(Edit::Delete {
+                at: start,
+                text: removed,
+            });
+            new_offsets.push(start);
+        }
+        new_offsets.sort_by_key(|b| b.as_usize());
+        new_offsets.dedup();
+        if let Some((first, rest)) = new_offsets.split_first() {
+            self.selection = Selection::caret(*first);
+            self.extra_carets = rest.to_vec();
+        }
         self.preferred_column = None;
         self.dirty = true;
         Ok(())
@@ -266,6 +427,7 @@ impl Document {
             text: removed,
         });
         self.selection = Selection::caret(start);
+        self.extra_carets.clear();
         self.dirty = true;
         Ok(())
     }
@@ -323,6 +485,7 @@ impl Document {
         let len = self.buffer.len_bytes();
         let head = self.selection.head.as_usize().min(len);
         self.selection = Selection::caret(ByteOffset::new(head));
+        self.extra_carets.clear();
         self.dirty = false;
         self.preferred_column = None;
         self.undo = UndoStack::new();
@@ -393,6 +556,7 @@ impl Document {
         let len = self.buffer.len_bytes();
         let b = ByteOffset::new(byte.as_usize().min(len));
         self.selection = Selection::caret(b);
+        self.extra_carets.clear();
         self.preferred_column = None;
         self.undo.commit_group();
     }
@@ -436,6 +600,7 @@ impl DocumentStore {
             path: None,
             buffer: Buffer::new(),
             selection: Selection::default(),
+            extra_carets: Vec::new(),
             undo: UndoStack::new(),
             dirty: false,
             preferred_column: None,
@@ -464,6 +629,7 @@ impl DocumentStore {
             path: Some(canonical),
             buffer: Buffer::from_text(&text),
             selection: Selection::default(),
+            extra_carets: Vec::new(),
             undo: UndoStack::new(),
             dirty: false,
             preferred_column: None,
@@ -654,5 +820,23 @@ mod tests {
         assert_eq!(doc.caret().unwrap(), Caret::new(1, 2)); // "xy" só tem 2 cols
         doc.move_up(false).unwrap();
         assert_eq!(doc.caret().unwrap(), Caret::new(0, 5));
+    }
+}
+
+#[cfg(test)]
+mod multi_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn insert_at_two_carets() {
+        let mut store = DocumentStore::new();
+        let id = store.open_empty();
+        let doc = store.get_mut(id).unwrap();
+        doc.insert_text("ab\ncd").unwrap();
+        doc.jump_to_byte(ByteOffset::new(0));
+        doc.add_cursor_below().unwrap();
+        assert_eq!(doc.extra_carets().len(), 1);
+        doc.insert_text("X").unwrap();
+        assert_eq!(doc.buffer().as_string(), "Xab\nXcd");
     }
 }

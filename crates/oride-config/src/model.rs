@@ -499,6 +499,16 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+shift+i", "lsp_format"),
         ("ctrl+shift+m", "toggle_diagnostics"),
         ("ctrl+r", "reload_file"),
+        // P9 splits + multi-cursor
+        ("ctrl+alt+v", "split_vertical"),
+        ("ctrl+alt+h", "split_horizontal"),
+        ("ctrl+alt+right", "focus_next_pane"),
+        ("ctrl+alt+left", "focus_next_pane"),
+        ("f6", "focus_next_pane"),
+        ("ctrl+alt+w", "close_pane"),
+        ("ctrl+alt+up", "add_cursor_above"),
+        ("ctrl+alt+down", "add_cursor_below"),
+        ("ctrl+alt+u", "clear_extra_cursors"),
     ];
     pairs
         .into_iter()

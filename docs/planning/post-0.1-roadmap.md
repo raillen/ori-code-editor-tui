@@ -238,11 +238,15 @@ Atualizar `docs/plugin-api.md` a cada fatia.
 
 ### P9a — Splits de buffer
 
+**Status:** MVP feito — 2 panes, H/V (`Ctrl+Alt+H/V`), `F6` focus, `Ctrl+Alt+W` close.
+
 - N viewports editáveis, focus cycle, H/V split  
 - Modelo de “tab groups” ou “pane → document id”  
 - **Depende de:** layout engine refatorado (P7 pode ensaiar painel fixo, mas splits genéricos são outro salto)
 
 ### P9b — Multi-cursor
+
+**Status:** MVP feito — `extra_carets`, insert/backspace multi, `Ctrl+Alt+↑/↓`, clear `Ctrl+Alt+U`.
 
 - `Vec<Selection>` + edit batch + undo group  
 - Render N carets  

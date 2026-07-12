@@ -39,4 +39,4 @@ Plano detalhado e decisões: **[`docs/planning/post-0.1-roadmap.md`](planning/po
 | **P6** | Injections em fences | **feito (MVP)** · `oris`/`js`/`html`/`css` |
 | **P7** | Preview MD ANSI | **feito** · `Ctrl+Shift+V` / `Alt+P` · scroll `Alt+↑↓` |
 | **P8** | Plugins (incremento) | **feito (MVP)** · `oride-plugin` · palette “Plugin: word count” |
-| depois | Splits · multi-cursor | minor/major futuras |
+| **P9** | Splits · multi-cursor | **MVP** · `Ctrl+Alt+V/H`, `F6`, `Ctrl+Alt+↑↓` |

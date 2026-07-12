@@ -22,9 +22,16 @@
 
 - Crate **`oride-plugin`**: `LanguageProvider`, `Plugin`, `PluginCtx`, `PluginHost`
 - Providers built-in (oris/md/html/css/js) — comentário e soft wrap via host
-- Plugin **word count** na command palette (`Plugin: word count`)
+- Plugins na palette: **word count**, **show file path**
 - Hooks `OnOpen` / `OnSave` (lifecycle silencioso por default)
 - Docs: `docs/plugin-api.md`
+
+### Added (P9 splits + multi-cursor)
+
+- **Split** vertical/horizontal: `Ctrl+Alt+V` / `Ctrl+Alt+H` (até 2 panes)
+- Troca de pane: `F6` / `Ctrl+Alt+←→` · fechar pane: `Ctrl+Alt+W`
+- **Multi-cursor**: `Ctrl+Alt+↑/↓` adiciona · digite em todos · `Ctrl+Alt+U` limpa
+- Carets extras em amarelo; primário mantém estilo de cursor
 
 ## 0.1.0-alpha.5
 

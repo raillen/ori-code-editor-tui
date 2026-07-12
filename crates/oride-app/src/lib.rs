@@ -7,6 +7,7 @@ mod disk_watch;
 mod find;
 mod run;
 mod session;
+mod split;
 mod terminal_guard;
 
 pub use app::{App, KeyCommand};

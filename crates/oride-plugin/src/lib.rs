@@ -13,5 +13,6 @@ pub use language::{
     LANG_PLAIN,
 };
 pub use plugin::{
-    CommandMeta, Plugin, PluginCtx, PluginError, PluginHook, PluginResult, WordCountPlugin,
+    CommandMeta, Plugin, PluginCtx, PluginError, PluginHook, PluginResult, ShowPathPlugin,
+    WordCountPlugin,
 };
