@@ -1,0 +1,11 @@
+[package]
+name = "oride-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Built-in LanguageProvider / Plugin traits and host for Oride"
+rust-version.workspace = true
+
+[dependencies]
+oride-syntax = { workspace = true }
+thiserror = { workspace = true }

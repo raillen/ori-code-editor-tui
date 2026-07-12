@@ -18,6 +18,7 @@ Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/ma
 - Config / keymaps / themes / `[lsp]` via **TOML**
 - **OriScript LSP** via `oriscript lsp` on `PATH`
 - Command palette, fuzzy open, git status, find/replace (regex), session
+- Built-in **plugin surface** (`oride-plugin`; e.g. palette “Plugin: word count”)
 
 ## Build & run
 

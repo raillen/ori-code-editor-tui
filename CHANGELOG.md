@@ -18,6 +18,14 @@
 - **Preview Markdown ANSI/TUI** (`Ctrl+Shift+V` / `Alt+P`): painel read-only ao lado do editor
 - Scroll do preview: `Alt+↑/↓` / `Alt+PgUp/PgDn`
 
+### Added (P8)
+
+- Crate **`oride-plugin`**: `LanguageProvider`, `Plugin`, `PluginCtx`, `PluginHost`
+- Providers built-in (oris/md/html/css/js) — comentário e soft wrap via host
+- Plugin **word count** na command palette (`Plugin: word count`)
+- Hooks `OnOpen` / `OnSave` (lifecycle silencioso por default)
+- Docs: `docs/plugin-api.md`
+
 ## 0.1.0-alpha.5
 
 ### Added (P4 final)

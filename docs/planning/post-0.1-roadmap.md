@@ -208,6 +208,8 @@ Render mínimo v1:
 
 ## P8 — Plugins: incremento (sem host externo)
 
+**Status:** implementado (MVP) — crate `oride-plugin`, `builtin_host`, word-count na palette, hooks OnOpen/OnSave, comment via LanguageProvider.
+
 ### Objetivo
 
 Deixar o 0.1 **preparado** para 0.2/0.3: superfície de extensão **built-in**, documentada, sem Lua/WASM ainda.

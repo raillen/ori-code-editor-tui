@@ -871,6 +871,7 @@ dependencies = [
  "oride-git",
  "oride-keymap",
  "oride-lsp",
+ "oride-plugin",
  "oride-search",
  "oride-syntax",
  "oride-terminal",
@@ -932,6 +933,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "oride-plugin"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "oride-syntax",
  "thiserror 2.0.18",
 ]
 

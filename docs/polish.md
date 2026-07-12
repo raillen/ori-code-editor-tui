@@ -38,5 +38,5 @@ Plano detalhado e decisões: **[`docs/planning/post-0.1-roadmap.md`](planning/po
 | **P5** | Search in project | **feito** · `Ctrl+Shift+F` · `rg` + fallback Rust |
 | **P6** | Injections em fences | **feito (MVP)** · `oris`/`js`/`html`/`css` |
 | **P7** | Preview MD ANSI | **feito** · `Ctrl+Shift+V` / `Alt+P` · scroll `Alt+↑↓` |
-| **P8** | Plugins (incremento) | traits built-in; sem Lua/WASM ainda |
+| **P8** | Plugins (incremento) | **feito (MVP)** · `oride-plugin` · palette “Plugin: word count” |
 | depois | Splits · multi-cursor | minor/major futuras |

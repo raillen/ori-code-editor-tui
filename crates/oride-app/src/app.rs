@@ -11,6 +11,7 @@ use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
 use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
 use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
+use oride_plugin::{builtin_host, PluginCtx, PluginHook, PluginHost};
 use oride_search::{format_hit_label, search_project, SearchHit, SearchQuery};
 use oride_syntax::{
     continue_list_on_enter, detect_language, render_preview_lines, HighlightEngine, LanguageId,
@@ -132,6 +133,7 @@ pub struct App {
     show_diagnostics: bool,
     lsp_doc_version: i32,
     pending_reload: Option<PathBuf>,
+    plugin_host: PluginHost,
 }
 
 impl App {
@@ -248,6 +250,7 @@ impl App {
             show_diagnostics: false,
             lsp_doc_version: 1,
             pending_reload: None,
+            plugin_host: builtin_host(),
         }
     }
 
@@ -868,6 +871,11 @@ impl App {
                         .copied()
                     {
                         let _ = self.apply_action(action);
+                    } else if let Some(cmd_id) = self.plugin_host.command_id_for_label(&item) {
+                        self.run_plugin_command(cmd_id);
+                    } else {
+                        // tenta id direto
+                        self.run_plugin_command(&item);
                     }
                 }
             }
@@ -913,8 +921,11 @@ impl App {
         let mut items: Vec<String> = Action::palette_actions()
             .iter()
             .map(|a| a.palette_label().to_string())
-            .filter(|l| fuzzy_match(query, l))
             .collect();
+        for cmd in self.plugin_host.palette_commands() {
+            items.push(cmd.label.to_string());
+        }
+        items.retain(|l| fuzzy_match(query, l));
         items.sort();
         items
     }
@@ -1298,6 +1309,7 @@ impl App {
                         }
                         self.set_status("saved");
                         self.refresh_git_and_index();
+                        self.fire_plugin_hook(PluginHook::OnSave);
                     }
                     Err(DocumentError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidInput => {
                         self.open_save_as_browser();
@@ -1729,14 +1741,15 @@ impl App {
 
     fn toggle_line_comment(&mut self) -> Result<(), DocumentError> {
         let lang = self.active_language();
-        let open = match lang.line_comment() {
+        let provider = self.plugin_host.language(lang);
+        let open = match provider.comment_open() {
             Some(o) => o,
             None => {
                 self.set_status("comentário não definido para esta linguagem");
                 return Ok(());
             }
         };
-        let close = lang.block_comment_close().unwrap_or("");
+        let close = provider.comment_close().unwrap_or("");
         let doc = self.store.active_mut()?;
         let caret = doc.caret()?;
         let line = doc.buffer().line_text(caret.line).unwrap_or_default();
@@ -1778,8 +1791,66 @@ impl App {
     }
 
     fn apply_language_defaults(&mut self, lang: LanguageId) {
-        if lang.default_soft_wrap() {
+        let provider = self.plugin_host.language(lang);
+        if provider.default_soft_wrap() {
             self.soft_wrap = true;
+        }
+        self.fire_plugin_hook(PluginHook::OnOpen);
+    }
+
+    fn run_plugin_command(&mut self, cmd_id: &str) {
+        let text = self
+            .store
+            .active()
+            .map(|d| d.buffer().as_string())
+            .unwrap_or_default();
+        let path = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(Path::to_path_buf));
+        let dirty = self.store.active().map(|d| d.is_dirty()).unwrap_or(false);
+        let workspace = self.workspace.clone();
+        let mut adapter = HostCtx {
+            status: None,
+            workspace,
+            path,
+            text,
+            dirty,
+        };
+        match self.plugin_host.run_command(cmd_id, &mut adapter) {
+            Ok(()) => {
+                if let Some(s) = adapter.status {
+                    self.set_status(s);
+                }
+            }
+            Err(e) => self.set_status(format!("plugin: {e}")),
+        }
+    }
+
+    fn fire_plugin_hook(&mut self, hook: PluginHook) {
+        let text = self
+            .store
+            .active()
+            .map(|d| d.buffer().as_string())
+            .unwrap_or_default();
+        let path = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(Path::to_path_buf));
+        let dirty = self.store.active().map(|d| d.is_dirty()).unwrap_or(false);
+        let workspace = self.workspace.clone();
+        let mut adapter = HostCtx {
+            status: None,
+            workspace,
+            path,
+            text,
+            dirty,
+        };
+        self.plugin_host.dispatch_hook(hook, &mut adapter);
+        if let Some(s) = adapter.status {
+            self.set_status(s);
         }
     }
 
@@ -2578,6 +2649,32 @@ impl App {
             hit.line,
             hit.line_text.chars().take(40).collect::<String>()
         ));
+    }
+}
+
+struct HostCtx {
+    status: Option<String>,
+    workspace: PathBuf,
+    path: Option<PathBuf>,
+    text: String,
+    dirty: bool,
+}
+
+impl PluginCtx for HostCtx {
+    fn set_status(&mut self, msg: &str) {
+        self.status = Some(msg.to_string());
+    }
+    fn workspace_root(&self) -> &Path {
+        &self.workspace
+    }
+    fn active_path(&self) -> Option<PathBuf> {
+        self.path.clone()
+    }
+    fn active_buffer_text(&self) -> String {
+        self.text.clone()
+    }
+    fn active_is_dirty(&self) -> bool {
+        self.dirty
     }
 }
 
