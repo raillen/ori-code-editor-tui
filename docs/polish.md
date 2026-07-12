@@ -6,7 +6,7 @@ Fatias de DX para candidatar release **0.1.0** (sem LSP ainda).
 
 | Feature | Atalho / notas |
 |---------|----------------|
-| Help overlay | `F1` / `Ctrl+G` |
+| Lista de keybinds | `F1` / `Ctrl+G` / `Ctrl+Shift+/` — todos os binds do mapa, com filtro |
 | Find compacto | `Ctrl+F` barra no rodapé · `F3` next · case/acentos |
 | Replace / replace all | `Ctrl+H` · `Alt+Enter` 1× · `Ctrl+Alt+Enter` all |
 | Seleção multi-linha | Shift+setas/Home/End · Ctrl+A · highlight azul |

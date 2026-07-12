@@ -98,7 +98,7 @@ impl Action {
             Self::FocusToggleTreeEditor => "Focus: toggle tree / editor",
             Self::ToggleSoftWrap => "Toggle soft wrap",
             Self::ToggleComment => "Toggle comment",
-            Self::Help => "Help (keybindings)",
+            Self::Help => "Show all keybindings",
             Self::Find => "Find…",
             Self::FindNext => "Find next",
             Self::FindPrev => "Find previous",

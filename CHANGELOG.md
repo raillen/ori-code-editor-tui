@@ -4,7 +4,7 @@
 
 ### Added (P4 polish)
 
-- Help overlay (`F1` / `Ctrl+G`)
+- Lista completa de keybinds (`F1` / `Ctrl+G` / `Ctrl+Shift+/`) — filtro + scroll
 - Find compacto no rodapé + replace/replace-all, case e acentos (`Ctrl+F`, `Ctrl+H`, `Alt+C`/`Alt+A`)
 - Clipboard copy/paste/cut (`Ctrl+C/V/X`) via arboard + fallback interno
 - Seleção multi-linha (Shift+setas/Home/End, Ctrl+Shift+Home/End, Ctrl+A) com highlight azul

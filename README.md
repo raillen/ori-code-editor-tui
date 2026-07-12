@@ -53,7 +53,7 @@ cargo build --release
 | `Ctrl+O` | **Open folder** (`F2` / `Ctrl+Enter` / `Ctrl+O` confirma) |
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
 | `Ctrl+"` / `Ctrl+'` | Toggle terminal |
-| `F1` / `Ctrl+G` | Help |
+| `F1` / `Ctrl+G` / `Ctrl+Shift+/` | **List all keybindings** (filter · ↑↓ · Esc) |
 | `Ctrl+F` / `F3` | Find bar (footer) / next |
 | `Ctrl+H` | Replace (same bar) |
 | `Alt+C` / `Alt+A` | Toggle case / ignore accents (in find) |

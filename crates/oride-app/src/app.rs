@@ -52,7 +52,11 @@ enum Overlay {
         kind: PromptKind,
         buffer: String,
     },
-    Help,
+    /// Lista completa de keybinds (filtro + scroll).
+    Help {
+        query: String,
+        selected: usize,
+    },
     /// Find/replace compacto (barra no rodapé; estado em `App.find`).
     Find,
 }
@@ -278,10 +282,8 @@ impl App {
                 self.handle_prompt_key(key);
                 true
             }
-            Overlay::Help => {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
-                    self.overlay = Overlay::None;
-                }
+            Overlay::Help { .. } => {
+                self.handle_help_key(key);
                 true
             }
             Overlay::Find => {
@@ -660,6 +662,80 @@ impl App {
         items
     }
 
+    /// Linhas `chord → ação` a partir do keymap efetivo (defaults + config).
+    fn keybind_list_items(&self, query: &str) -> Vec<String> {
+        self.keymap
+            .list_bindings()
+            .into_iter()
+            .map(|(chord, action)| format!("{:<24}  {}", chord, action.palette_label()))
+            .filter(|line| fuzzy_match(query, line))
+            .collect()
+    }
+
+    fn handle_help_key(&mut self, key: KeyEvent) {
+        let Overlay::Help { query, selected } = &self.overlay else {
+            return;
+        };
+        let mut query = query.clone();
+        let mut selected = *selected;
+        let items_len = self.keybind_list_items(&query).len();
+
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                // 'q' só fecha se a query estiver vazia (senão digita q no filtro)
+                if matches!(key.code, KeyCode::Char('q')) && !query.is_empty() {
+                    query.push('q');
+                    selected = 0;
+                    self.overlay = Overlay::Help { query, selected };
+                    return;
+                }
+                self.overlay = Overlay::None;
+                return;
+            }
+            KeyCode::Up => {
+                selected = selected.saturating_sub(1);
+            }
+            KeyCode::Down => {
+                if items_len > 0 {
+                    selected = (selected + 1).min(items_len - 1);
+                }
+            }
+            KeyCode::PageUp => {
+                selected = selected.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                if items_len > 0 {
+                    selected = (selected + 10).min(items_len - 1);
+                }
+            }
+            KeyCode::Home => selected = 0,
+            KeyCode::End if items_len > 0 => selected = items_len - 1,
+            KeyCode::Backspace => {
+                query.pop();
+                selected = 0;
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                    && !c.is_control() =>
+            {
+                query.push(c);
+                selected = 0;
+            }
+            _ => {}
+        }
+
+        let len = self.keybind_list_items(&query).len();
+        if len == 0 {
+            selected = 0;
+        } else {
+            selected = selected.min(len - 1);
+        }
+        self.overlay = Overlay::Help { query, selected };
+    }
+
     fn handle_prompt_key(&mut self, key: KeyEvent) {
         let Overlay::Prompt { kind, buffer } = &self.overlay else {
             return;
@@ -965,7 +1041,14 @@ impl App {
                 self.set_status(format!("save all: {n} ok · {skip} sem path"));
             }
             Action::Help => {
-                self.overlay = Overlay::Help;
+                self.overlay = Overlay::Help {
+                    query: String::new(),
+                    selected: 0,
+                };
+                self.set_status(format!(
+                    "atalhos: {} binds · digite filtra · ↑↓ · Esc",
+                    self.keymap.len()
+                ));
             }
             Action::Find => {
                 self.find.show_replace = false;
@@ -1544,14 +1627,19 @@ impl App {
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
-            Overlay::Help => {
-                let items: Vec<String> = HELP_LINES.iter().map(|s| (*s).to_string()).collect();
+            Overlay::Help { query, selected } => {
+                let items = self.keybind_list_items(query);
+                let title = format!(
+                    "atalhos ({}/{}) — F1 · Ctrl+G · Ctrl+Shift+/",
+                    items.len(),
+                    self.keymap.len()
+                );
                 let view = PaletteView {
-                    title: "atalhos (Esc fecha)",
-                    query: "",
+                    title: &title,
+                    query,
                     items: &items,
-                    selected: 0,
-                    hint: "Esc / Enter / q fecha",
+                    selected: *selected,
+                    hint: "↑↓ navegar · digite filtra · Enter/Esc/q fecha",
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
@@ -1689,18 +1777,6 @@ fn build_default_keymap() -> Keymap {
     Keymap::from_string_map(defaults.keys.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .expect("default key bindings must parse")
 }
-
-const HELP_LINES: &[&str] = &[
-    "Ctrl+S save · Ctrl+Shift+S / F12 / Alt+Shift+S save as · Ctrl+Alt+S save all",
-    "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut · Ctrl+A select all",
-    "Shift+setas/Home/End seleciona · Ctrl+Shift+Home/End até início/fim",
-    "Ctrl+F find (barra) · F3 next · Ctrl+H replace · Alt+C case · Alt+A acentos",
-    "Find: Alt+Enter replace 1× · Ctrl+Alt+Enter replace all · Tab campo",
-    "Ctrl+B tree · Ctrl+E editor · Ctrl+O pasta · Ctrl+P arquivo",
-    "Ctrl+PgUp/PgDn · Alt+←/→ abas · Ctrl+N/W nova/fecha · F1 help",
-    "Browser pasta: ↑↓ · Enter entra · F2/Ctrl+Enter/Ctrl+O confirma",
-    "Save as: digite nome · Enter ou Ctrl+S salva · → entra pasta",
-];
 
 fn fuzzy_match(query: &str, candidate: &str) -> bool {
     if query.is_empty() {
@@ -1886,10 +1962,51 @@ mod tests {
             }),
             Some(KeyCommand::Action(Action::Help))
         );
+        let list_keys = KeyEvent {
+            code: KeyCode::Char('/'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(list_keys),
+            Some(KeyCommand::Action(Action::Help))
+        );
         assert_eq!(
             app.map_key(key_ctrl(KeyCode::Char('"'))),
             Some(KeyCommand::Action(Action::ToggleTerminal))
         );
+    }
+
+    #[test]
+    fn help_lists_all_keybinds() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::Help));
+        assert!(matches!(app.overlay, Overlay::Help { .. }));
+        let items = app.keybind_list_items("");
+        assert!(
+            items.len() >= 10,
+            "expected full keybind list, got {}",
+            items.len()
+        );
+        assert!(
+            items
+                .iter()
+                .any(|l| l.contains("ctrl+s") && l.contains("Save")),
+            "missing ctrl+s save: {items:?}"
+        );
+        assert!(
+            items
+                .iter()
+                .any(|l| l.contains("f1") && l.contains("keybind")),
+            "missing f1 help: {items:?}"
+        );
+        // filtro
+        let filtered = app.keybind_list_items("save");
+        assert!(!filtered.is_empty());
+        assert!(filtered
+            .iter()
+            .all(|l| l.to_ascii_lowercase().contains("save") || fuzzy_match("save", l)));
     }
 
     #[test]

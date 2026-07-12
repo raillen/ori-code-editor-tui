@@ -60,6 +60,28 @@ impl Keymap {
         self.bindings.get(&chord).copied()
     }
 
+    /// Lista todos os bindings como `(chord canônico, action)`, ordenados por chord.
+    #[must_use]
+    pub fn list_bindings(&self) -> Vec<(String, Action)> {
+        let mut items: Vec<(String, Action)> = self
+            .bindings
+            .iter()
+            .map(|(chord, action)| (chord.canonical_string(), *action))
+            .collect();
+        items.sort_by(|a, b| a.0.cmp(&b.0));
+        items
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.bindings.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.bindings.is_empty()
+    }
+
     /// Resolve tecla: binding → senão insert de caractere imprimível.
     #[must_use]
     pub fn resolve_event(&self, key: KeyEvent) -> Option<ResolvedKey> {
@@ -181,5 +203,17 @@ mod tests {
             .resolve_event(key(KeyCode::Char('x'), KeyModifiers::NONE))
             .unwrap();
         assert_eq!(r, ResolvedKey::InsertChar('x'));
+    }
+
+    #[test]
+    fn list_bindings_sorted() {
+        let map =
+            Keymap::from_string_map([("ctrl+s", "save"), ("f1", "help"), ("ctrl+a", "select_all")])
+                .unwrap();
+        let list = map.list_bindings();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].0, "ctrl+a");
+        assert_eq!(list[1].0, "ctrl+s");
+        assert_eq!(list[2].0, "f1");
     }
 }

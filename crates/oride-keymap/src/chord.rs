@@ -160,6 +160,7 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "/" | "slash" => KeyCode::Char('/'),
         "\"" | "quote" | "doublequote" | "dquote" => KeyCode::Char('"'),
         "'" | "apostrophe" | "squote" => KeyCode::Char('\''),
+        "?" | "question" | "questionmark" => KeyCode::Char('?'),
         s if s.chars().count() == 1 => {
             let c = s.chars().next().unwrap();
             KeyCode::Char(c)
@@ -194,8 +195,9 @@ fn code_token(code: KeyCode) -> String {
         KeyCode::Char('\\') => "\\".into(),
         KeyCode::Char('"') => "\"".into(),
         KeyCode::Char('\'') => "'".into(),
+        KeyCode::Char('?') => "?".into(),
         KeyCode::Char(c) => c.to_ascii_lowercase().to_string(),
-        _ => "?".into(),
+        _ => "unknown".into(),
     }
 }
 

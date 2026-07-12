@@ -188,8 +188,11 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("shift+f3", "find_prev"),
         ("ctrl+h", "replace"),
         ("ctrl+shift+h", "replace"),
-        ("ctrl+g", "help"),
+        // Listar todos os atalhos
         ("f1", "help"),
+        ("ctrl+g", "help"),
+        ("ctrl+shift+/", "help"),
+        ("ctrl+?", "help"),
         ("enter", "insert_newline"),
         ("backspace", "backspace"),
         ("delete", "delete"),
