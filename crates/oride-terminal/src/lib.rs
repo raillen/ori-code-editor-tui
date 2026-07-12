@@ -1,4 +1,4 @@
-//! Painel de terminal embutido (PTY).
+//! Painel de terminal embutido (PTY) — shell interativo.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -17,23 +17,20 @@ pub enum TerminalError {
     Io(#[from] std::io::Error),
 }
 
-/// Terminal embutido com scrollback em texto (ANSI stripped).
+/// Terminal embutido com scrollback (ANSI stripped para o painel texto).
 pub struct EmbeddedTerminal {
     writer: Box<dyn Write + Send>,
     rx: Receiver<Vec<u8>>,
     scrollback: String,
     pub visible: bool,
-    /// Altura em linhas do painel (0 = colapsado visualmente; visible ainda pode ser true).
     pub height_lines: u16,
+    pub last_error: Option<String>,
     _child: Box<dyn portable_pty::Child + Send + Sync>,
-    // keep master alive
     _master: Box<dyn portable_pty::MasterPty + Send>,
 }
 
-// portable-pty child/master are opaque trait objects from the crate API.
-
 impl EmbeddedTerminal {
-    /// Spawna `$SHELL` ou `/bin/sh` em `cwd`.
+    /// Spawna shell **interativo** em `cwd`.
     pub fn spawn(cwd: &Path, cols: u16, rows: u16) -> Result<Self, TerminalError> {
         let pty_system = NativePtySystem::default();
         let pair = pty_system
@@ -47,15 +44,21 @@ impl EmbeddedTerminal {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
         let mut cmd = CommandBuilder::new(&shell);
+        if shell.contains("bash")
+            || shell.contains("zsh")
+            || shell.contains("fish")
+            || shell.ends_with("/sh")
+        {
+            cmd.arg("-i");
+        }
         cmd.cwd(cwd);
-        // login-ish env
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
 
         let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
-        // drop slave on pair end
 
         let mut reader = pair
             .master
@@ -68,7 +71,7 @@ impl EmbeddedTerminal {
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         thread::spawn(move || {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
@@ -77,9 +80,7 @@ impl EmbeddedTerminal {
                             break;
                         }
                     }
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(20));
-                    }
+                    Err(_) => thread::sleep(Duration::from_millis(15)),
                 }
             }
         });
@@ -89,13 +90,13 @@ impl EmbeddedTerminal {
             rx,
             scrollback: String::new(),
             visible: false,
-            height_lines: 10,
+            height_lines: 12,
+            last_error: None,
             _child: child,
             _master: pair.master,
         })
     }
 
-    /// Drena saída pendente do PTY.
     pub fn poll_output(&mut self) {
         loop {
             match self.rx.try_recv() {
@@ -103,34 +104,46 @@ impl EmbeddedTerminal {
                     let stripped = strip_ansi_escapes::strip(&chunk);
                     let text = String::from_utf8_lossy(&stripped);
                     self.scrollback.push_str(&text);
-                    // limita scrollback
-                    const MAX: usize = 200_000;
+                    const MAX: usize = 400_000;
                     if self.scrollback.len() > MAX {
                         let drain = self.scrollback.len() - MAX;
                         self.scrollback.drain(..drain);
                     }
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.last_error = Some("shell encerrado".into());
+                    break;
+                }
             }
         }
     }
 
     pub fn write_bytes(&mut self, data: &[u8]) -> Result<(), TerminalError> {
-        self.writer.write_all(data)?;
-        self.writer.flush()?;
-        Ok(())
+        match self
+            .writer
+            .write_all(data)
+            .and_then(|_| self.writer.flush())
+        {
+            Ok(()) => {
+                self.last_error = None;
+                Ok(())
+            }
+            Err(e) => {
+                self.last_error = Some(e.to_string());
+                Err(TerminalError::Io(e))
+            }
+        }
     }
 
     pub fn write_str(&mut self, s: &str) -> Result<(), TerminalError> {
         self.write_bytes(s.as_bytes())
     }
 
-    /// Últimas `max_lines` linhas do scrollback.
     #[must_use]
     pub fn visible_lines(&self, max_lines: usize) -> Vec<String> {
         let lines: Vec<&str> = self.scrollback.lines().collect();
-        let start = lines.len().saturating_sub(max_lines);
+        let start = lines.len().saturating_sub(max_lines.max(1));
         lines[start..].iter().map(|s| (*s).to_string()).collect()
     }
 
@@ -139,7 +152,6 @@ impl EmbeddedTerminal {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        // best-effort; portable-pty MasterPty has resize
         let _ = self._master.resize(PtySize {
             rows: rows.max(2),
             cols: cols.max(20),

@@ -509,6 +509,14 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+alt+up", "add_cursor_above"),
         ("ctrl+alt+down", "add_cursor_below"),
         ("ctrl+alt+u", "clear_extra_cursors"),
+        // UX polish
+        ("ctrl+shift+g", "toggle_scm"),
+        ("ctrl+shift+o", "buffer_picker"),
+        ("ctrl+alt+o", "jump_back"),
+        ("ctrl+alt+i", "jump_forward"),
+        ("alt+/", "which_key"),
+        ("alt+shift+/", "welcome"),
+        ("f2", "show_diff"),
     ];
     pairs
         .into_iter()

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (UX polish — tiers S+A)
+
+- **Terminal usável como shell do sistema**: spawn interativo (`-i`), Ctrl+A–Z no PTY (Ctrl+C/D/…), Esc→editor, borda ciano + erros de PTY
+- **Menu bar** File/Edit/View/Go/Git/Help (`Alt+F`…, ↑↓ Enter, Esc)
+- **Context banner** de alto contraste: `FOCUS: EDITOR|TREE|TERMINAL|SCM`
+- **Status limpa**: file · Ln/Col · git:branch · blame · hint `F1 · Ctrl+Shift+P`
+- **Which-key** (`Alt+/`) e **welcome essentials** na 1ª sessão
+- **Find/replace mini-modal** centrado (`Ctrl+F` / `Ctrl+H`)
+- **SCM panel direito** (`Ctrl+Shift+G`): arquivos sujos M/A/D/? · Enter abre · `d` diff · `r` refresh
+- **Buffer picker** (`Ctrl+Shift+O`), **jump list** (`Ctrl+Alt+O/I`), **git blame** na status, **diff read-only** (`F2`)
+- **Mouse completo**: documentado como **futuro** (pós S+A) em `docs/planning/ux-polish-plan.md`
+- **Tier B** (surround, undo tree, macros…): futuro
+
 ### Added (P5)
 
 - **Find in project** (`Ctrl+Shift+F`): crate `oride-search` com backend `rg` + fallback Rust (`ignore`)

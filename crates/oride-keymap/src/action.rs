@@ -71,6 +71,15 @@ pub enum Action {
     AddCursorAbove,
     AddCursorBelow,
     ClearExtraCursors,
+    // UX polish (menu / SCM / navigation)
+    ToggleScm,
+    FocusScm,
+    BufferPicker,
+    JumpBack,
+    JumpForward,
+    WhichKey,
+    Welcome,
+    ShowDiff,
 }
 
 impl Action {
@@ -141,6 +150,14 @@ impl Action {
             Self::AddCursorAbove => "Add cursor above",
             Self::AddCursorBelow => "Add cursor below",
             Self::ClearExtraCursors => "Clear extra cursors",
+            Self::ToggleScm => "Toggle SCM panel",
+            Self::FocusScm => "Focus SCM panel",
+            Self::BufferPicker => "Buffer picker…",
+            Self::JumpBack => "Jump back",
+            Self::JumpForward => "Jump forward",
+            Self::WhichKey => "Which-key (shortcuts)",
+            Self::Welcome => "Essential shortcuts",
+            Self::ShowDiff => "Git diff (active file)",
         }
     }
 
@@ -194,6 +211,14 @@ impl Action {
             Action::AddCursorAbove,
             Action::AddCursorBelow,
             Action::ClearExtraCursors,
+            Action::ToggleScm,
+            Action::FocusScm,
+            Action::BufferPicker,
+            Action::JumpBack,
+            Action::JumpForward,
+            Action::WhichKey,
+            Action::Welcome,
+            Action::ShowDiff,
             Action::Quit,
         ]
     }
@@ -277,6 +302,14 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "add_cursor_above" => Action::AddCursorAbove,
         "add_cursor_below" => Action::AddCursorBelow,
         "clear_extra_cursors" => Action::ClearExtraCursors,
+        "toggle_scm" => Action::ToggleScm,
+        "focus_scm" => Action::FocusScm,
+        "buffer_picker" => Action::BufferPicker,
+        "jump_back" => Action::JumpBack,
+        "jump_forward" => Action::JumpForward,
+        "which_key" => Action::WhichKey,
+        "welcome" => Action::Welcome,
+        "show_diff" => Action::ShowDiff,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)

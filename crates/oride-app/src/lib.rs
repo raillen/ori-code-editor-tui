@@ -5,6 +5,8 @@ mod browser;
 mod clipboard;
 mod disk_watch;
 mod find;
+mod jump_list;
+mod menus;
 mod run;
 mod session;
 mod split;

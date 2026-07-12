@@ -65,6 +65,78 @@ pub fn status_map(cwd: &Path) -> HashMap<PathBuf, GitFileStatus> {
     map
 }
 
+/// Blame de uma linha (1-based). Formato curto para status.
+pub fn blame_line(cwd: &Path, file: &Path, line_1based: usize) -> Option<String> {
+    let rel = file.strip_prefix(cwd).unwrap_or(file);
+    let output = Command::new("git")
+        .args([
+            "blame",
+            "-L",
+            &format!("{line_1based},{line_1based}"),
+            "--porcelain",
+            "--",
+            &rel.to_string_lossy(),
+        ])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut author = None;
+    let mut summary = None;
+    for line in text.lines() {
+        if let Some(a) = line.strip_prefix("author ") {
+            author = Some(a.to_string());
+        }
+        if let Some(s) = line.strip_prefix("summary ") {
+            summary = Some(s.to_string());
+        }
+    }
+    match (author, summary) {
+        (Some(a), Some(s)) => {
+            let s: String = s.chars().take(40).collect();
+            Some(format!("blame:{a} — {s}"))
+        }
+        (Some(a), None) => Some(format!("blame:{a}")),
+        _ => None,
+    }
+}
+
+/// Diff unstaged de um path (texto).
+pub fn diff_file(cwd: &Path, file: &Path) -> Option<String> {
+    let rel = file.strip_prefix(cwd).unwrap_or(file);
+    let output = Command::new("git")
+        .args(["diff", "--", &rel.to_string_lossy()])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    // untracked: empty diff — try as new file
+    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
+    if text.trim().is_empty() {
+        let out2 = Command::new("git")
+            .args(["diff", "--no-index", "/dev/null", &rel.to_string_lossy()])
+            .current_dir(cwd)
+            .output()
+            .ok()?;
+        text = String::from_utf8_lossy(&out2.stdout).to_string();
+    }
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+/// Lista ordenada (badge, path) para painel SCM.
+pub fn scm_entries(cwd: &Path) -> Vec<(GitFileStatus, PathBuf)> {
+    let map = status_map(cwd);
+    let mut v: Vec<_> = map.into_iter().map(|(p, s)| (s, p)).collect();
+    v.sort_by(|a, b| a.1.cmp(&b.1));
+    v
+}
+
 /// Branch atual ou `None`.
 pub fn current_branch(cwd: &Path) -> Option<String> {
     let output = Command::new("git")

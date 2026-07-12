@@ -8,8 +8,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use oride_config::{resolve_indent_for_file, Config, EditorIndent};
 use oride_core::{DocumentError, DocumentId, DocumentStore};
 use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
-use oride_git::{current_branch, status_map, GitFileStatus};
-use oride_keymap::{Action, Keymap, ResolvedKey};
+use oride_git::{blame_line, current_branch, diff_file, scm_entries, status_map, GitFileStatus};
+use oride_keymap::{parse_action, Action, Keymap, ResolvedKey};
 use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
 use oride_plugin::{builtin_host, PluginCtx, PluginHook, PluginHost};
 use oride_search::{format_hit_label, search_project, SearchHit, SearchQuery};
@@ -18,9 +18,10 @@ use oride_syntax::{
 };
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
-    render_editor, render_find_bar, render_md_preview, render_palette, render_status, render_tabs,
-    render_terminal_panel, render_tree, EditorView, FindBarView, MdPreviewView, PaletteView,
-    StatusModel, TreeView, UiTheme,
+    render_context_banner, render_editor, render_md_preview, render_menu_bar, render_menu_dropdown,
+    render_mini_modal, render_palette, render_scm_panel, render_status, render_tabs,
+    render_terminal_panel, render_tree, render_which_key, EditorView, MdPreviewView, MiniModalView,
+    PaletteView, ScmItem, StatusModel, TreeView, UiTheme,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
@@ -29,6 +30,8 @@ use crate::browser::{BrowseAction, BrowseMode, PathBrowser};
 use crate::clipboard;
 use crate::disk_watch::DiskWatch;
 use crate::find::FindState;
+use crate::jump_list::{Jump, JumpList};
+use crate::menus::default_menus;
 use crate::session::Session;
 use crate::split::{SplitOrientation, SplitState};
 
@@ -44,6 +47,7 @@ pub enum Focus {
     Editor,
     Tree,
     Terminal,
+    Scm,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +92,17 @@ enum Overlay {
     /// Arquivo mudou no disco — Enter recarrega, Esc ignora.
     ReloadConfirm {
         path: PathBuf,
+    },
+    /// Lista de buffers abertos (fuzzy).
+    BufferPicker {
+        query: String,
+        selected: usize,
+    },
+    /// Diff git read-only.
+    Diff {
+        path: PathBuf,
+        lines: Vec<String>,
+        scroll: usize,
     },
 }
 
@@ -136,6 +151,17 @@ pub struct App {
     pending_reload: Option<PathBuf>,
     plugin_host: PluginHost,
     split: SplitState,
+    /// Painel SCM à direita.
+    show_scm: bool,
+    scm_selected: usize,
+    scm_width: u16,
+    scm_cache: Vec<(GitFileStatus, PathBuf)>,
+    /// Menu bar: Some((menu_idx, item_idx)).
+    menu_open: Option<(usize, usize)>,
+    show_which_key: bool,
+    show_welcome: bool,
+    jump_list: JumpList,
+    menus: Vec<oride_ui::MenuColumn>,
 }
 
 impl App {
@@ -219,6 +245,11 @@ impl App {
         let active_id = store
             .active_id()
             .unwrap_or_else(|| oride_core::DocumentId::from_raw(0));
+        let scm_cache = if config.tree.git_status {
+            scm_entries(&workspace)
+        } else {
+            Vec::new()
+        };
         Self {
             store,
             scroll_y: 0,
@@ -257,6 +288,16 @@ impl App {
             pending_reload: None,
             plugin_host: builtin_host(),
             split: SplitState::single(active_id),
+            show_scm: false,
+            scm_selected: 0,
+            scm_width: 28,
+            scm_cache,
+            menu_open: None,
+            show_which_key: false,
+            // Welcome só no boot interativo (`new_empty_or_session`), não em testes/unitários.
+            show_welcome: false,
+            jump_list: JumpList::default(),
+            menus: default_menus(),
         }
     }
 
@@ -280,11 +321,14 @@ impl App {
                     let idx = session.active_index.min(paths.len() - 1);
                     let _ = app.store.open_path(&paths[idx]);
                 }
+                app.show_welcome = false;
                 app.set_status("sessão restaurada");
                 return app;
             }
         }
-        Self::new_empty()
+        let mut app = Self::new_empty();
+        app.show_welcome = true;
+        app
     }
 
     pub fn persist_session(&self) {
@@ -442,6 +486,34 @@ impl App {
 
     /// Entrada principal de teclado (overlays / focus / keymap).
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Welcome / which-key / menu têm prioridade sobre o resto
+        if self.show_welcome {
+            self.handle_welcome_key(key);
+            return;
+        }
+        if self.show_which_key {
+            if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                self.show_which_key = false;
+            }
+            return;
+        }
+        if self.menu_open.is_some() {
+            self.handle_menu_key(key);
+            return;
+        }
+        // Alt+letra abre menu (File/Edit/…)
+        if key.modifiers.contains(KeyModifiers::ALT)
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::SHIFT)
+        {
+            if let KeyCode::Char(c) = key.code {
+                let c = c.to_ascii_lowercase();
+                if let Some(idx) = self.menus.iter().position(|m| m.hotkey == c) {
+                    self.menu_open = Some((idx, 0));
+                    return;
+                }
+            }
+        }
         if self.handle_overlay_key(key) {
             return;
         }
@@ -472,6 +544,11 @@ impl App {
             }
             Focus::Terminal => {
                 if self.handle_terminal_key(key) {
+                    return;
+                }
+            }
+            Focus::Scm => {
+                if self.handle_scm_key(key) {
                     return;
                 }
             }
@@ -521,6 +598,14 @@ impl App {
                 if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
                     self.overlay = Overlay::None;
                 }
+                true
+            }
+            Overlay::BufferPicker { .. } => {
+                self.handle_buffer_picker_key(key);
+                true
+            }
+            Overlay::Diff { .. } => {
+                self.handle_diff_key(key);
                 true
             }
             Overlay::ReloadConfirm { path } => {
@@ -1165,19 +1250,77 @@ impl App {
     }
 
     fn handle_terminal_key(&mut self, key: KeyEvent) -> bool {
-        // Ctrl+` e outros ctrl* deixam para o keymap
+        // Esc (sem modificadores) volta ao editor
+        if key.code == KeyCode::Esc && key.modifiers.is_empty() {
+            self.focus = Focus::Editor;
+            self.set_status("foco: editor");
+            return true;
+        }
+
+        // Atalhos IDE permitidos mesmo com foco no terminal
         if key.modifiers.contains(KeyModifiers::CONTROL)
             || key.modifiers.contains(KeyModifiers::ALT)
         {
-            return false;
+            if let Some(cmd) = self.map_key(key) {
+                if let KeyCommand::Action(action) = cmd {
+                    if matches!(
+                        action,
+                        Action::ToggleTerminal
+                            | Action::FocusEditor
+                            | Action::FocusTree
+                            | Action::FocusToggleTreeEditor
+                            | Action::ToggleTree
+                            | Action::ToggleScm
+                            | Action::FocusScm
+                            | Action::CommandPalette
+                            | Action::Help
+                            | Action::Quit
+                            | Action::WhichKey
+                            | Action::Welcome
+                            | Action::TerminalGrow
+                            | Action::TerminalShrink
+                            | Action::NextTab
+                            | Action::PrevTab
+                    ) {
+                        self.apply(cmd);
+                        return true;
+                    }
+                }
+            }
         }
-        if key.code == KeyCode::Esc {
-            self.focus = Focus::Editor;
-            return true;
-        }
+
         let Some(term) = self.terminal.as_mut() else {
             return false;
         };
+
+        // Ctrl+A–Z → byte de controle (shell real)
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+        {
+            if let KeyCode::Char(c) = key.code {
+                let b = (c.to_ascii_lowercase() as u8) & 0x1f;
+                if b != 0 {
+                    let _ = term.write_bytes(&[b]);
+                    return true;
+                }
+            }
+        }
+
+        // Alt+char → ESC + char (meta no shell)
+        if key.modifiers.contains(KeyModifiers::ALT)
+            && !key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            if let KeyCode::Char(c) = key.code {
+                let mut buf = [0u8; 4];
+                let s = c.encode_utf8(&mut buf);
+                let mut data = Vec::with_capacity(1 + s.len());
+                data.push(0x1b);
+                data.extend_from_slice(s.as_bytes());
+                let _ = term.write_bytes(&data);
+                return true;
+            }
+        }
+
         match key.code {
             KeyCode::Enter => {
                 let _ = term.write_str("\r");
@@ -1185,10 +1328,13 @@ impl App {
             KeyCode::Backspace => {
                 let _ = term.write_bytes(&[0x7f]);
             }
+            KeyCode::Delete => {
+                let _ = term.write_bytes(&[0x1b, b'[', b'3', b'~']);
+            }
             KeyCode::Tab => {
                 let _ = term.write_str("\t");
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 let mut buf = [0u8; 4];
                 let s = c.encode_utf8(&mut buf);
                 let _ = term.write_str(s);
@@ -1204,6 +1350,18 @@ impl App {
             }
             KeyCode::Left => {
                 let _ = term.write_bytes(&[0x1b, b'[', b'D']);
+            }
+            KeyCode::Home => {
+                let _ = term.write_bytes(&[0x1b, b'[', b'H']);
+            }
+            KeyCode::End => {
+                let _ = term.write_bytes(&[0x1b, b'[', b'F']);
+            }
+            KeyCode::PageUp => {
+                let _ = term.write_bytes(&[0x1b, b'[', b'5', b'~']);
+            }
+            KeyCode::PageDown => {
+                let _ = term.write_bytes(&[0x1b, b'[', b'6', b'~']);
             }
             _ => return false,
         }
@@ -1520,15 +1678,20 @@ impl App {
                 }
             }
             Action::ToggleTerminal => {
+                self.ensure_terminal();
                 if let Some(term) = self.terminal.as_mut() {
                     term.toggle_visible();
                     if term.visible {
                         self.focus = Focus::Terminal;
+                        self.set_status(
+                            "terminal: digite · Esc=editor · Ctrl+C no shell · Ctrl+` fecha",
+                        );
                     } else if self.focus == Focus::Terminal {
                         self.focus = Focus::Editor;
+                        self.set_status("terminal oculto");
                     }
                 } else {
-                    self.set_status("terminal unavailable");
+                    self.set_status("terminal unavailable (PTY)");
                 }
             }
             Action::TerminalGrow => {
@@ -1650,10 +1813,67 @@ impl App {
                 }
             },
             Action::FocusTerminal => {
+                self.ensure_terminal();
                 if let Some(term) = self.terminal.as_mut() {
                     term.visible = true;
                     self.focus = Focus::Terminal;
+                    self.set_status("foco: terminal · digite · Esc=editor");
+                } else {
+                    self.set_status("terminal unavailable");
                 }
+            }
+            Action::ToggleScm => {
+                self.show_scm = !self.show_scm;
+                if self.show_scm {
+                    self.refresh_scm_cache();
+                    self.focus = Focus::Scm;
+                    self.set_status(
+                        "SCM · ↑↓ · Enter abre · d diff · r refresh · Esc editor · Ctrl+Shift+G",
+                    );
+                } else {
+                    if self.focus == Focus::Scm {
+                        self.focus = Focus::Editor;
+                    }
+                    self.set_status("SCM oculto");
+                }
+            }
+            Action::FocusScm => {
+                self.show_scm = true;
+                self.refresh_scm_cache();
+                self.focus = Focus::Scm;
+                self.set_status("foco: SCM");
+            }
+            Action::BufferPicker => {
+                self.overlay = Overlay::BufferPicker {
+                    query: String::new(),
+                    selected: 0,
+                };
+            }
+            Action::JumpBack => {
+                self.record_jump();
+                if let Some(j) = self.jump_list.back() {
+                    self.goto_jump(&j);
+                    self.set_status("jump back");
+                } else {
+                    self.set_status("jump list vazio");
+                }
+            }
+            Action::JumpForward => {
+                if let Some(j) = self.jump_list.forward() {
+                    self.goto_jump(&j);
+                    self.set_status("jump forward");
+                } else {
+                    self.set_status("sem jump forward");
+                }
+            }
+            Action::WhichKey => {
+                self.show_which_key = true;
+            }
+            Action::Welcome => {
+                self.show_welcome = true;
+            }
+            Action::ShowDiff => {
+                self.open_diff_for_active();
             }
             Action::OpenFolder => {
                 let browser = PathBrowser::new(&self.workspace, BrowseMode::Folder);
@@ -1746,6 +1966,7 @@ impl App {
                     }
                 }
                 self.refresh_git_and_index();
+                self.refresh_scm_cache();
             }
         }
         Ok(())
@@ -2011,6 +2232,379 @@ impl App {
         self.file_index = list_files_recursive(&self.workspace, false).unwrap_or_default();
     }
 
+    fn refresh_scm_cache(&mut self) {
+        self.scm_cache = scm_entries(&self.workspace);
+        if self.scm_selected >= self.scm_cache.len() && !self.scm_cache.is_empty() {
+            self.scm_selected = self.scm_cache.len() - 1;
+        }
+        if self.scm_cache.is_empty() {
+            self.scm_selected = 0;
+        }
+    }
+
+    fn ensure_terminal(&mut self) {
+        let dead = self
+            .terminal
+            .as_ref()
+            .and_then(|t| t.last_error.as_deref())
+            .map(|e| e.contains("encerrado"))
+            .unwrap_or(false);
+        if self.terminal.is_none() || dead {
+            let h = self
+                .terminal
+                .as_ref()
+                .map(|t| t.height_lines)
+                .unwrap_or(self.config.terminal.default_height)
+                .max(3);
+            match EmbeddedTerminal::spawn(&self.workspace, 80, h) {
+                Ok(mut t) => {
+                    t.height_lines = h;
+                    t.visible = true;
+                    self.terminal = Some(t);
+                }
+                Err(e) => self.set_status(format!("pty: {e}")),
+            }
+        }
+    }
+
+    fn record_jump(&mut self) {
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let path = doc.path().map(Path::to_path_buf);
+        let byte = doc.selection().head;
+        let line = doc.caret().map(|c| c.line).unwrap_or(0);
+        self.jump_list.push(Jump { path, byte, line });
+    }
+
+    fn goto_jump(&mut self, jump: &Jump) {
+        if let Some(path) = &jump.path {
+            let _ = self.store.open_path(path);
+            self.apply_editorconfig_for_active();
+            self.lsp_open_active();
+        }
+        if let Ok(doc) = self.store.active_mut() {
+            doc.jump_to_byte(jump.byte);
+        }
+        if let Some(id) = self.store.active_id() {
+            self.split.set_focused_doc(id);
+        }
+        self.scroll_y = jump.line.saturating_sub(2);
+        self.focus = Focus::Editor;
+        self.ensure_cursor_visible();
+    }
+
+    fn open_diff_for_active(&mut self) {
+        let path = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(Path::to_path_buf));
+        let Some(path) = path else {
+            self.set_status("diff: sem path");
+            return;
+        };
+        self.open_diff_for_path(&path);
+    }
+
+    fn open_diff_for_path(&mut self, path: &Path) {
+        match diff_file(&self.workspace, path) {
+            Some(text) => {
+                let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+                self.overlay = Overlay::Diff {
+                    path: path.to_path_buf(),
+                    lines,
+                    scroll: 0,
+                };
+            }
+            None => self.set_status(format!("diff vazio: {}", path.display())),
+        }
+    }
+
+    fn apply_action_id(&mut self, id: &str) {
+        if let Some(cmd) = id.strip_prefix("plugin:") {
+            self.run_plugin_command(cmd);
+            return;
+        }
+        match parse_action(id) {
+            Ok(action) => {
+                let _ = self.apply_action(action);
+            }
+            Err(_) => self.set_status(format!("ação desconhecida: {id}")),
+        }
+    }
+
+    fn handle_menu_key(&mut self, key: KeyEvent) {
+        let Some((mi, ii)) = self.menu_open else {
+            return;
+        };
+        let n_menus = self.menus.len();
+        let n_items = self.menus.get(mi).map(|m| m.items.len()).unwrap_or(0);
+        match key.code {
+            KeyCode::Esc => self.menu_open = None,
+            KeyCode::Left => {
+                let mi = if mi == 0 {
+                    n_menus.saturating_sub(1)
+                } else {
+                    mi - 1
+                };
+                self.menu_open = Some((mi, 0));
+            }
+            KeyCode::Right => {
+                let mi = if n_menus == 0 { 0 } else { (mi + 1) % n_menus };
+                self.menu_open = Some((mi, 0));
+            }
+            KeyCode::Up => {
+                let ii = ii.saturating_sub(1);
+                self.menu_open = Some((mi, ii));
+            }
+            KeyCode::Down => {
+                let ii = if n_items == 0 {
+                    0
+                } else {
+                    (ii + 1).min(n_items - 1)
+                };
+                self.menu_open = Some((mi, ii));
+            }
+            KeyCode::Enter => {
+                let action_id = self
+                    .menus
+                    .get(mi)
+                    .and_then(|m| m.items.get(ii))
+                    .map(|it| it.action_id.clone());
+                self.menu_open = None;
+                if let Some(id) = action_id {
+                    self.apply_action_id(&id);
+                }
+            }
+            KeyCode::Char(c) => {
+                // first letter of item
+                if let Some(menu) = self.menus.get(mi) {
+                    let c = c.to_ascii_lowercase();
+                    if let Some(idx) = menu
+                        .items
+                        .iter()
+                        .position(|it| it.label.to_ascii_lowercase().starts_with(c))
+                    {
+                        self.menu_open = Some((mi, idx));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_welcome_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char(' ') => {
+                self.show_welcome = false;
+            }
+            _ => {
+                // qualquer tecla fecha e reprocessa? só fecha.
+                self.show_welcome = false;
+            }
+        }
+    }
+
+    fn handle_scm_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.focus = Focus::Editor;
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.scm_selected = self.scm_selected.saturating_sub(1);
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.scm_cache.is_empty() {
+                    self.scm_selected = (self.scm_selected + 1).min(self.scm_cache.len() - 1);
+                }
+                true
+            }
+            KeyCode::Char('r') => {
+                self.refresh_scm_cache();
+                self.refresh_git_and_index();
+                self.set_status("SCM refreshed");
+                true
+            }
+            KeyCode::Char('d') => {
+                if let Some((_, p)) = self.scm_cache.get(self.scm_selected) {
+                    let path = self.workspace.join(p);
+                    self.open_diff_for_path(&path);
+                }
+                true
+            }
+            KeyCode::Enter => {
+                if let Some((_, p)) = self.scm_cache.get(self.scm_selected).cloned() {
+                    let path = self.workspace.join(p);
+                    self.record_jump();
+                    match self.store.open_path(&path) {
+                        Ok(_) => {
+                            self.apply_editorconfig_for_active();
+                            self.lsp_open_active();
+                            self.focus = Focus::Editor;
+                            self.scroll_y = 0;
+                            if let Some(id) = self.store.active_id() {
+                                self.split.set_focused_doc(id);
+                            }
+                            self.set_status(format!("opened {}", path.display()));
+                        }
+                        Err(e) => self.set_status(format!("open: {e}")),
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_buffer_picker_key(&mut self, key: KeyEvent) {
+        let Overlay::BufferPicker { query, selected } = &self.overlay else {
+            return;
+        };
+        let mut query = query.clone();
+        let mut selected = *selected;
+        let items = self.buffer_picker_items(&query);
+        match key.code {
+            KeyCode::Esc => self.overlay = Overlay::None,
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if !items.is_empty() => {
+                selected = (selected + 1).min(items.len() - 1);
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                selected = 0;
+            }
+            KeyCode::Char(c) if !c.is_control() => {
+                query.push(c);
+                selected = 0;
+            }
+            KeyCode::Enter => {
+                if let Some((id, _)) = items.get(selected).cloned() {
+                    self.record_jump();
+                    let _ = self.store.set_active(id);
+                    self.split.set_focused_doc(id);
+                    self.focus = Focus::Editor;
+                    self.scroll_y = 0;
+                    self.overlay = Overlay::None;
+                    return;
+                }
+            }
+            _ => {}
+        }
+        if !matches!(self.overlay, Overlay::None) {
+            self.overlay = Overlay::BufferPicker { query, selected };
+        }
+    }
+
+    fn buffer_picker_items(&self, query: &str) -> Vec<(DocumentId, String)> {
+        let q = query.to_lowercase();
+        let mut out = Vec::new();
+        for tab in self.store.tab_summaries() {
+            let path = self
+                .store
+                .get(tab.id)
+                .and_then(|d| d.path().map(Path::to_path_buf));
+            let label = if let Some(p) = path {
+                let rel = p.strip_prefix(&self.workspace).unwrap_or(p.as_path());
+                format!("{}{}", if tab.dirty { "● " } else { "  " }, rel.display())
+            } else {
+                format!("{}{}", if tab.dirty { "● " } else { "  " }, tab.title)
+            };
+            if q.is_empty() || label.to_lowercase().contains(&q) {
+                out.push((tab.id, label));
+            }
+        }
+        out
+    }
+
+    fn handle_diff_key(&mut self, key: KeyEvent) {
+        let Overlay::Diff {
+            path,
+            lines,
+            scroll,
+        } = &self.overlay
+        else {
+            return;
+        };
+        let path = path.clone();
+        let lines = lines.clone();
+        let mut scroll = *scroll;
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.overlay = Overlay::None;
+                return;
+            }
+            KeyCode::Up | KeyCode::Char('k') => scroll = scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                scroll = (scroll + 1).min(lines.len().saturating_sub(1));
+            }
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => {
+                scroll = (scroll + 10).min(lines.len().saturating_sub(1));
+            }
+            KeyCode::Home => scroll = 0,
+            KeyCode::End => scroll = lines.len().saturating_sub(1),
+            _ => {}
+        }
+        self.overlay = Overlay::Diff {
+            path,
+            lines,
+            scroll,
+        };
+    }
+
+    fn focus_label(&self) -> &'static str {
+        match self.focus {
+            Focus::Editor => "FOCUS: EDITOR",
+            Focus::Tree => "FOCUS: TREE",
+            Focus::Terminal => "FOCUS: TERMINAL",
+            Focus::Scm => "FOCUS: SCM",
+        }
+    }
+
+    fn which_key_rows(&self) -> Vec<(String, String)> {
+        vec![
+            ("F1".into(), "todos os atalhos".into()),
+            ("Ctrl+Shift+P".into(), "command palette".into()),
+            ("Ctrl+P".into(), "abrir arquivo".into()),
+            ("Ctrl+S".into(), "salvar".into()),
+            ("Ctrl+F".into(), "find".into()),
+            ("Ctrl+Shift+F".into(), "find no projeto".into()),
+            ("Ctrl+`".into(), "terminal".into()),
+            ("Ctrl+Shift+G".into(), "SCM panel".into()),
+            ("Ctrl+Shift+O".into(), "buffer picker".into()),
+            ("Ctrl+B".into(), "foco árvore".into()),
+            ("Ctrl+E".into(), "foco editor".into()),
+            ("Alt+F/E/V/G/I/H".into(), "menus".into()),
+            ("Alt+/".into(), "este which-key".into()),
+        ]
+    }
+
+    fn welcome_lines(&self) -> Vec<String> {
+        vec![
+            "Bem-vindo ao Oride".into(),
+            "".into(),
+            "  F1              todos os atalhos".into(),
+            "  Ctrl+Shift+P    command palette".into(),
+            "  Ctrl+P          abrir arquivo".into(),
+            "  Ctrl+S          salvar".into(),
+            "  Ctrl+\"          terminal interativo".into(),
+            "  Ctrl+Shift+G    painel Git (SCM)".into(),
+            "  Alt+F           menu File".into(),
+            "".into(),
+            "  Enter / Esc / Space — começar".into(),
+        ]
+    }
+
+    fn current_blame(&self) -> Option<String> {
+        let doc = self.store.active().ok()?;
+        let path = doc.path()?;
+        let line = doc.caret().ok()?.line + 1;
+        blame_line(&self.workspace, path, line)
+    }
+
     fn ensure_tree_visible(&mut self) {
         let Some(tree) = &self.tree else { return };
         let sel = tree.selected_index();
@@ -2045,37 +2639,65 @@ impl App {
             .terminal
             .as_ref()
             .filter(|t| t.visible)
-            .map(|t| t.height_lines.min(area.height.saturating_sub(3)).max(3))
+            .map(|t| t.height_lines.min(area.height.saturating_sub(5)).max(3))
             .unwrap_or(0);
 
+        // menu(1) + banner(1) + body + term + status(1)
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(1), // menu bar
+                Constraint::Length(1), // context banner
                 Constraint::Min(1),
                 Constraint::Length(term_h),
-                Constraint::Length(1),
+                Constraint::Length(1), // status
             ])
             .split(area);
 
-        let body = main_chunks[0];
-        let term_area = main_chunks[1];
-        let status_area = main_chunks[2];
+        let menu_area = main_chunks[0];
+        let banner_area = main_chunks[1];
+        let body = main_chunks[2];
+        let term_area = main_chunks[3];
+        let status_area = main_chunks[4];
+
+        let open_menu = self.menu_open.map(|(i, _)| i);
+        render_menu_bar(frame, menu_area, &self.menus, open_menu);
+
+        let banner_hint = match self.focus {
+            Focus::Editor => "F1 help · Ctrl+Shift+P cmds · Alt+F menu",
+            Focus::Tree => "↑↓ Enter · Ctrl+E editor",
+            Focus::Terminal => "digite · Esc=editor · Ctrl+C shell",
+            Focus::Scm => "↑↓ Enter · d=diff · r=refresh · Esc",
+        };
+        render_context_banner(frame, banner_area, self.focus_label(), banner_hint);
 
         let tree_w = if self.show_tree {
             self.tree_width.min(body.width / 2).max(12)
         } else {
             0
         };
+        let scm_w = if self.show_scm {
+            self.scm_width.min(body.width / 3).max(16)
+        } else {
+            0
+        };
 
         let body_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(tree_w), Constraint::Min(1)])
+            .constraints([
+                Constraint::Length(tree_w),
+                Constraint::Min(1),
+                Constraint::Length(scm_w),
+            ])
             .split(body);
 
         if tree_w > 0 {
             self.draw_tree(frame, body_chunks[0]);
         }
         self.draw_editor_column(frame, body_chunks[1]);
+        if scm_w > 0 {
+            self.draw_scm(frame, body_chunks[2]);
+        }
 
         if term_h > 0 {
             if let Some(term) = self.terminal.as_mut() {
@@ -2084,17 +2706,24 @@ impl App {
                 let rows = term_area.height.max(2);
                 term.resize(cols, rows);
                 let lines = term.visible_lines(rows as usize);
+                let err = term.last_error.clone();
                 render_terminal_panel(
                     frame,
                     term_area,
                     &lines,
                     self.focus == Focus::Terminal,
                     &self.theme,
+                    err.as_deref(),
                 );
             }
         }
 
         self.draw_status(frame, status_area);
+
+        // dropdown menu por cima
+        if let Some((mi, ii)) = self.menu_open {
+            render_menu_dropdown(frame, area, &self.menus, mi, ii);
+        }
 
         // overlays
         match &self.overlay {
@@ -2154,17 +2783,23 @@ impl App {
                 render_palette(frame, area, &view, &self.theme);
             }
             Overlay::Find => {
+                // mini-modal centrado (U4)
                 let status = self.find.status();
                 let options = self.find.options_label();
-                let view = FindBarView {
-                    query: &self.find.query,
-                    replace: &self.find.replace,
-                    show_replace: self.find.show_replace,
-                    focus_replace: self.find.focus_replace,
-                    status: &status,
-                    options: &options,
+                let q_mark = if self.find.focus_replace { " " } else { "▌" };
+                let r_mark = if self.find.focus_replace { "▌" } else { " " };
+                let mut lines = vec![format!("Find: {}{}", self.find.query, q_mark)];
+                if self.find.show_replace {
+                    lines.push(format!("Repl: {}{}", self.find.replace, r_mark));
+                }
+                lines.push(status);
+                lines.push(options);
+                let view = MiniModalView {
+                    title: "Find / Replace",
+                    lines: &lines,
+                    selected: if self.find.focus_replace { 1 } else { 0 },
                 };
-                render_find_bar(frame, area, &view);
+                render_mini_modal(frame, area, &view, &self.theme);
             }
             Overlay::ProjectFind {
                 query,
@@ -2246,6 +2881,53 @@ impl App {
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
+            Overlay::BufferPicker { query, selected } => {
+                let items: Vec<String> = self
+                    .buffer_picker_items(query)
+                    .into_iter()
+                    .map(|(_, l)| l)
+                    .collect();
+                let view = PaletteView {
+                    title: "buffers",
+                    query,
+                    items: &items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter abre · digite filtra · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::Diff {
+                path,
+                lines,
+                scroll,
+            } => {
+                let start = *scroll;
+                let end = (start + 40).min(lines.len());
+                let slice: Vec<String> = lines[start..end].to_vec();
+                let title = format!("diff · {} · j/k scroll · Esc", path.display());
+                let view = PaletteView {
+                    title: &title,
+                    query: "",
+                    items: &slice,
+                    selected: 0,
+                    hint: "↑↓/jk · PgUp/PgDn · Esc fecha",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+        }
+
+        if self.show_which_key {
+            let rows = self.which_key_rows();
+            render_which_key(frame, area, "which-key", &rows);
+        }
+        if self.show_welcome {
+            let lines = self.welcome_lines();
+            let view = MiniModalView {
+                title: "Oride · essentials",
+                lines: &lines,
+                selected: 0,
+            };
+            render_mini_modal(frame, area, &view, &self.theme);
         }
     }
 
@@ -2384,47 +3066,38 @@ impl App {
         let caret = doc.and_then(|d| d.caret().ok()).unwrap_or_default();
         let title = doc.map(|d| d.tab_title()).unwrap_or_else(|| "oride".into());
         let dirty = doc.map(|d| d.is_dirty()).unwrap_or(false);
-        let branch = self
-            .git_branch
-            .as_deref()
-            .map(|b| format!("  git:{b}"))
-            .unwrap_or_default();
-        let focus = match self.focus {
-            Focus::Editor => "editor",
-            Focus::Tree => "árvore",
-            Focus::Terminal => "term",
-        };
-        let lang = self.highlight.language().as_str();
+        let blame = self.current_blame();
 
-        // Caminho do item selecionado na árvore (localização clara)
-        let tree_sel = self.tree.as_ref().and_then(|t| {
-            t.selected_row().map(|r| {
-                let rel = r.path.strip_prefix(&self.workspace).unwrap_or(&r.path);
-                let kind = if r.is_dir { "dir" } else { "file" };
-                format!("▶ {kind}:{}", rel.display())
-            })
-        });
-
-        let mut message = self.status_message.clone();
-        if message.is_none() {
-            message = Some(match (self.focus, tree_sel) {
-                (Focus::Tree, Some(sel)) => {
-                    format!("{focus} · {sel} · ↑↓ navegar · Enter abrir · Ctrl+E editor")
-                }
-                _ => format!(
-                    "{focus} · {lang}{branch} · Ctrl+B árvore · Ctrl+E editor · Ctrl+O pasta"
-                ),
-            });
-        }
         let status = StatusModel {
             title,
             dirty,
             line: caret.line,
             column: caret.column,
-            message,
-            help_hint: String::new(),
+            git_branch: self.git_branch.clone(),
+            blame,
+            message: self.status_message.clone(),
+            help_hint: "F1 help · Ctrl+Shift+P cmds".into(),
         };
         render_status(frame, area, &status, &self.theme);
+    }
+
+    fn draw_scm(&self, frame: &mut Frame, area: Rect) {
+        let items: Vec<ScmItem> = self
+            .scm_cache
+            .iter()
+            .map(|(st, p)| ScmItem {
+                badge: st.badge(),
+                path: p.display().to_string(),
+            })
+            .collect();
+        render_scm_panel(
+            frame,
+            area,
+            "SCM",
+            &items,
+            self.scm_selected,
+            self.focus == Focus::Scm,
+        );
     }
 
     fn handle_diagnostics_key(&mut self, key: KeyEvent) {
@@ -2542,6 +3215,7 @@ impl App {
         match lsp.definition(&path, pos) {
             Ok(Some(loc)) => {
                 if let Some(p) = uri_to_path(&loc.uri) {
+                    self.record_jump();
                     let _ = self.store.open_path(&p);
                     if let Ok(doc) = self.store.active_mut() {
                         let line = loc.range.start.line as usize;
@@ -3302,5 +3976,119 @@ mod tests {
         });
         assert!(matches!(app.overlay, Overlay::None));
         assert!(dir.path().join("out.txt").exists());
+    }
+
+    #[test]
+    fn toggle_scm_and_buffer_picker() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::ToggleScm));
+        assert!(app.show_scm);
+        assert_eq!(app.focus, Focus::Scm);
+        app.apply(KeyCommand::Action(Action::ToggleScm));
+        assert!(!app.show_scm);
+        app.apply(KeyCommand::Action(Action::BufferPicker));
+        assert!(matches!(app.overlay, Overlay::BufferPicker { .. }));
+    }
+
+    #[test]
+    fn which_key_and_menu_hotkey() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::Action(Action::WhichKey));
+        assert!(app.show_which_key);
+        app.handle_key(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert!(!app.show_which_key);
+
+        // Alt+F abre menu File
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert_eq!(app.menu_open, Some((0, 0)));
+        app.handle_key(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert!(app.menu_open.is_none());
+    }
+
+    #[test]
+    fn terminal_ctrl_c_not_stolen_as_copy() {
+        let mut app = App::new_empty();
+        app.ensure_terminal();
+        if app.terminal.is_none() {
+            return; // ambiente sem PTY
+        }
+        if let Some(t) = app.terminal.as_mut() {
+            t.visible = true;
+        }
+        app.focus = Focus::Terminal;
+        // Ctrl+C com foco terminal deve ser consumido pelo handler (não Copy)
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert_eq!(app.focus, Focus::Terminal);
+        // Esc volta
+        app.handle_key(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert_eq!(app.focus, Focus::Editor);
+    }
+
+    #[test]
+    fn jump_list_records_and_back() {
+        use oride_core::ByteOffset;
+        let mut jl = crate::jump_list::JumpList::default();
+        jl.push(Jump {
+            path: None,
+            byte: ByteOffset::new(0),
+            line: 0,
+        });
+        jl.push(Jump {
+            path: None,
+            byte: ByteOffset::new(10),
+            line: 1,
+        });
+        let b = jl.back().expect("back");
+        assert_eq!(b.byte, ByteOffset::new(0));
+    }
+
+    #[test]
+    fn map_ux_actions() {
+        let app = App::new_empty();
+        let scm = KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(scm),
+            Some(KeyCommand::Action(Action::ToggleScm))
+        );
+        let pick = KeyEvent {
+            code: KeyCode::Char('o'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(pick),
+            Some(KeyCommand::Action(Action::BufferPicker))
+        );
     }
 }

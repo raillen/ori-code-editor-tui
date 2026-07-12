@@ -51,8 +51,14 @@ cargo build --release
 | `Ctrl+B` / `Ctrl+E` | Focus tree / editor |
 | `Ctrl+O` | **Open folder** (`F2` / `Ctrl+Enter` / `Ctrl+O` confirma) |
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
-| `Ctrl+"` / `Ctrl+'` | Toggle terminal |
+| `Ctrl+"` / `Ctrl+'` / `Ctrl+\`` | Toggle **terminal** (interativo; digite com foco · Esc=editor) |
+| `Ctrl+Shift+G` | **SCM panel** (direita · Enter abre · `d` diff) |
+| `Ctrl+Shift+O` | **Buffer picker** (tabs abertas) |
+| `Ctrl+Alt+O` / `I` | Jump back / forward |
+| `Alt+F/E/V/G/I/H` | **Menu bar** File/Edit/View/Go/Git/Help |
+| `Alt+/` | **Which-key** (atalhos essenciais) |
 | `F1` / `Ctrl+G` / `Ctrl+Shift+/` | **List all keybindings** (filter · ↑↓ · Esc) |
+| `F2` | **Git diff** do arquivo ativo |
 | `Ctrl+Space` / `Ctrl+K` / `F4` | LSP complete / hover / goto |
 | `Ctrl+Shift+I` / `Ctrl+Shift+M` | LSP format / diagnostics panel |
 | `Alt+=` / `Alt+-` | Terminal taller / shorter |
@@ -75,8 +81,10 @@ cargo build --release
 **Browser (`Ctrl+O` / `Ctrl+P` / Save as):** linha ciano = seleção · `↑↓` · `Enter` entra/abre (save as: **Enter salva**) · `F2`/`Ctrl+O` confirma pasta · digite filtra/nome.
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  
-**Terminal:** type when focused · `Esc` → editor.  
-**Icons:** Nerd Font glyphs (ASCII fallback exists in code).
+**Terminal:** shell interativo com foco no painel · `Ctrl+C` vai pro shell · `Esc` → editor · `Ctrl+"` fecha.  
+**SCM:** lista working tree dirty (não é 2ª project tree).  
+**Icons:** Nerd Font glyphs (ASCII fallback exists in code).  
+**Mouse:** planejado (futuro) — ver `docs/planning/ux-polish-plan.md`.
 
 ### Config
 
