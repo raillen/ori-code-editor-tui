@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added (find)
+
+- **Palavra completa** no find/replace (`Alt+W`): não casa substring dentro de identificador (ex.: `UI` em `GUI`)
+- Labels do modal mais claros: case / accent-ign / word / re
+
 ### Added (UX polish — tiers S+A)
 
 - **Terminal usável como shell do sistema**: spawn interativo (`-i`), Ctrl+A–Z no PTY (Ctrl+C/D/…), Esc→editor, borda ciano + erros de PTY

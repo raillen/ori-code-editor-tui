@@ -818,6 +818,10 @@ impl App {
                 self.find.toggle_accents();
                 self.recompute_find_and_jump();
             }
+            KeyCode::Char('w') if alt && !ctrl => {
+                self.find.toggle_whole_word();
+                self.recompute_find_and_jump();
+            }
             KeyCode::Char('r') if alt && !ctrl => {
                 self.find.toggle_regex();
                 self.recompute_find_and_jump();

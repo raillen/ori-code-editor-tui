@@ -1,4 +1,4 @@
-//! Busca no buffer ativo — case, acentos, regex, replace e replace-all.
+//! Busca no buffer ativo — case, acentos, palavra completa, regex, replace.
 
 /// Uma ocorrência: intervalo em bytes no texto original.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +16,8 @@ pub struct FindState {
     pub case_sensitive: bool,
     /// Ignora acentos (á≈a, ç≈c, …) na busca literal (não aplica em regex).
     pub ignore_accents: bool,
+    /// Só casa se a ocorrência for palavra isolada (evita UI dentro de GUI).
+    pub whole_word: bool,
     /// Interpreta a query como regex Rust.
     pub use_regex: bool,
     /// Erro de compilação regex (status).
@@ -33,6 +35,7 @@ impl Default for FindState {
             current: 0,
             case_sensitive: false,
             ignore_accents: true,
+            whole_word: false,
             use_regex: false,
             regex_error: None,
             show_replace: false,
@@ -44,7 +47,7 @@ impl Default for FindState {
 impl FindState {
     pub fn recompute(&mut self, haystack: &str) {
         self.regex_error = None;
-        self.matches = if self.use_regex {
+        let mut matches = if self.use_regex {
             match find_all_regex(haystack, &self.query, self.case_sensitive) {
                 Ok(m) => m,
                 Err(e) => {
@@ -60,6 +63,10 @@ impl FindState {
                 self.ignore_accents,
             )
         };
+        if self.whole_word {
+            matches.retain(|m| is_whole_word(haystack, m.start, m.end));
+        }
+        self.matches = matches;
         if self.matches.is_empty() {
             self.current = 0;
         } else {
@@ -100,6 +107,10 @@ impl FindState {
         self.ignore_accents = !self.ignore_accents;
     }
 
+    pub fn toggle_whole_word(&mut self) {
+        self.whole_word = !self.whole_word;
+    }
+
     pub fn toggle_regex(&mut self) {
         self.use_regex = !self.use_regex;
     }
@@ -107,9 +118,10 @@ impl FindState {
     #[must_use]
     pub fn status(&self) -> String {
         let flags = format!(
-            "case:{} accent:{} re:{}",
+            "case:{} accent:{} word:{} re:{}",
             if self.case_sensitive { "on" } else { "off" },
-            if self.ignore_accents { "ign" } else { "on" },
+            if self.ignore_accents { "ign" } else { "exact" },
+            if self.whole_word { "on" } else { "off" },
             if self.use_regex { "on" } else { "off" }
         );
         if let Some(err) = &self.regex_error {
@@ -117,7 +129,7 @@ impl FindState {
         }
         if self.query.is_empty() {
             return format!(
-                "find · {flags} · Alt+C case · Alt+A acentos · Alt+R regex · Ctrl+H replace"
+                "find · {flags} · Alt+C case · Alt+A acentos · Alt+W palavra · Alt+R regex · Ctrl+H replace"
             );
         }
         if self.matches.is_empty() {
@@ -134,12 +146,49 @@ impl FindState {
     #[must_use]
     pub fn options_label(&self) -> String {
         format!(
-            "[{}]case [{}]accent [{}]re · Enter next · Alt+Enter repl · Ctrl+Alt+Enter all · Esc",
+            "[{}]case [{}]accent-ign [{}]word [{}]re · Alt+C/A/W/R · Enter next · Alt+Enter repl · Esc",
             if self.case_sensitive { "x" } else { " " },
             if self.ignore_accents { "x" } else { " " },
+            if self.whole_word { "x" } else { " " },
             if self.use_regex { "x" } else { " " }
         )
     }
+}
+
+/// Caractere de “palavra” para borda (letras, dígitos, `_`).
+#[must_use]
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// `start`/`end` são offsets em **bytes** no `haystack`.
+#[must_use]
+pub fn is_whole_word(haystack: &str, start: usize, end: usize) -> bool {
+    if start > end || end > haystack.len() {
+        return false;
+    }
+    // borda esquerda: início do texto ou char anterior não-palavra
+    let left_ok = if start == 0 {
+        true
+    } else {
+        // char imediatamente antes de `start`
+        haystack[..start]
+            .chars()
+            .next_back()
+            .map(|c| !is_word_char(c))
+            .unwrap_or(true)
+    };
+    // borda direita: fim do texto ou char seguinte não-palavra
+    let right_ok = if end >= haystack.len() {
+        true
+    } else {
+        haystack[end..]
+            .chars()
+            .next()
+            .map(|c| !is_word_char(c))
+            .unwrap_or(true)
+    };
+    left_ok && right_ok
 }
 
 fn fold_char(c: char, case_sensitive: bool, ignore_accents: bool) -> char {
@@ -277,5 +326,42 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert_eq!(ranges[0].start, 1);
         assert_eq!(ranges[1].start, 4);
+    }
+
+    #[test]
+    fn whole_word_skips_substring_inside_identifier() {
+        // UI em "GUI" não deve casar; UI sozinho sim
+        let text = "GUI UI UIKit use UI.";
+        let mut f = FindState {
+            query: "UI".into(),
+            whole_word: true,
+            case_sensitive: true,
+            ignore_accents: false,
+            ..Default::default()
+        };
+        f.recompute(text);
+        // "UI" em " GUI UI " e em " UI." — não em GUI nem UIKit
+        assert_eq!(f.matches.len(), 2, "matches={:?}", f.matches);
+        for m in &f.matches {
+            assert_eq!(&text[m.start..m.end], "UI");
+            assert!(is_whole_word(text, m.start, m.end));
+        }
+    }
+
+    #[test]
+    fn whole_word_off_matches_substrings() {
+        let ranges = find_all("GUI UI", "UI", true, false);
+        assert_eq!(ranges.len(), 2); // G[UI] e [UI]
+    }
+
+    #[test]
+    fn is_whole_word_boundaries() {
+        let t = "ab cd ab";
+        // "ab" no início
+        assert!(is_whole_word(t, 0, 2));
+        // "ab" no fim
+        assert!(is_whole_word(t, 6, 8));
+        // "b c" não é palavra isolada no sentido de "bc" — teste borda em "cd"
+        assert!(is_whole_word(t, 3, 5));
     }
 }

@@ -69,9 +69,12 @@ cargo build --release
 | `F6` / `Ctrl+Alt+W` | Next pane / close pane |
 | `Ctrl+Alt+↑/↓` / `U` | Multi-cursor add / clear |
 | Find `Alt+R` | Toggle regex search (buffer e projeto) |
-| `Ctrl+F` / `F3` | Find bar (footer) / next |
-| `Ctrl+H` | Replace (same bar) |
-| `Alt+C` / `Alt+A` | Toggle case / ignore accents (in find) |
+| `Ctrl+F` / `F3` | Find mini-modal / next |
+| `Ctrl+H` | Replace (mesmo modal; Tab troca campo) |
+| `Alt+C` | Toggle **case sensitive** (no find) |
+| `Alt+A` | Toggle **ignorar acentos** (á≈a; no find) |
+| `Alt+W` | Toggle **palavra completa** (UI ≠ GUI) |
+| `Alt+R` | Toggle regex (buffer e projeto) |
 | `Alt+Enter` / `Ctrl+Alt+Enter` | Replace one / replace all |
 | `Ctrl+C` / `V` / `X` | Copy / paste / cut |
 | `Alt+Z` | Soft wrap |
