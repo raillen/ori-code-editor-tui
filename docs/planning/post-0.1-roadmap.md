@@ -151,6 +151,8 @@ oride-app / HighlightEngine
 
 ## P7 — Preview Markdown ANSI (painel TUI)
 
+**Status:** implementado — `md_preview` + painel 55/45 · `Ctrl+Shift+V` / `Alt+P`.
+
 ### Objetivo
 
 Com buffer MD focado (ou toggle explícito), mostrar **painel read-only** com texto “quase renderizado” em ANSI: headings em bold/cor, listas com bullets, links sublinhados, code em monoespaçado/cor.

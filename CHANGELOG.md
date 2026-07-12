@@ -13,6 +13,11 @@
 
 - **Language injections** em fences Markdown: ` ```oris `/`js`/`html`/`css` com highlight da grammar correspondente
 
+### Added (P7)
+
+- **Preview Markdown ANSI/TUI** (`Ctrl+Shift+V` / `Alt+P`): painel read-only ao lado do editor
+- Scroll do preview: `Alt+↑/↓` / `Alt+PgUp/PgDn`
+
 ## 0.1.0-alpha.5
 
 ### Added (P4 final)

@@ -46,7 +46,7 @@ Decisões e fatias: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-ro
 | Item | Descrição | Fatia |
 |------|-----------|--------|
 | **Highlight em code fences** | Injection: ` ```oris `/`js`/… com grammar da linguagem | **P6** |
-| **Preview Markdown ANSI** | Painel TUI read-only (não browser) | **P7** |
+| **Preview Markdown ANSI** | Painel TUI read-only (`Ctrl+Shift+V` / `Alt+P`) | **P7 feito** |
 | **Parse JSX real no MDX** | Além do highlight MD genérico | depois de P6/P7 |
 | Preview HTML/browser | Opcional; não prioritário | major futura |
 

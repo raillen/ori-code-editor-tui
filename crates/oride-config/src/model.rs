@@ -477,6 +477,8 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+o", "open_folder"),
         ("alt+z", "toggle_soft_wrap"),
         ("ctrl+/", "toggle_comment"),
+        ("ctrl+shift+v", "toggle_md_preview"),
+        ("alt+p", "toggle_md_preview"),
         ("ctrl+pageup", "prev_tab"),
         ("ctrl+pagedown", "next_tab"),
         ("alt+left", "prev_tab"),

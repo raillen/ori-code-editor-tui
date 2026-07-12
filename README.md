@@ -57,6 +57,7 @@ cargo build --release
 | `Alt+=` / `Alt+-` | Terminal taller / shorter |
 | `Ctrl+R` | Reload file from disk |
 | `Ctrl+Shift+F` | **Find in project** (rg ou fallback Rust) |
+| `Ctrl+Shift+V` / `Alt+P` | **Markdown preview** (painel TUI) |
 | Find `Alt+R` | Toggle regex search (buffer e projeto) |
 | `Ctrl+F` / `F3` | Find bar (footer) / next |
 | `Ctrl+H` | Replace (same bar) |

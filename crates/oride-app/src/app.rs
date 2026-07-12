@@ -12,12 +12,14 @@ use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
 use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
 use oride_search::{format_hit_label, search_project, SearchHit, SearchQuery};
-use oride_syntax::{continue_list_on_enter, detect_language, HighlightEngine, LanguageId};
+use oride_syntax::{
+    continue_list_on_enter, detect_language, render_preview_lines, HighlightEngine, LanguageId,
+};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
-    render_editor, render_find_bar, render_palette, render_status, render_tabs,
-    render_terminal_panel, render_tree, EditorView, FindBarView, PaletteView, StatusModel,
-    TreeView, UiTheme,
+    render_editor, render_find_bar, render_md_preview, render_palette, render_status, render_tabs,
+    render_terminal_panel, render_tree, EditorView, FindBarView, MdPreviewView, PaletteView,
+    StatusModel, TreeView, UiTheme,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
@@ -121,6 +123,8 @@ pub struct App {
     highlight: HighlightEngine,
     /// Soft wrap (default true em Markdown).
     soft_wrap: bool,
+    show_md_preview: bool,
+    preview_scroll: usize,
     find: FindState,
     disk_watch: DiskWatch,
     lsp: Option<LspClient>,
@@ -235,6 +239,8 @@ impl App {
             file_index,
             highlight: HighlightEngine::new(),
             soft_wrap: config.soft_wrap,
+            show_md_preview: false,
+            preview_scroll: 0,
             find: FindState::default(),
             disk_watch,
             lsp,
@@ -428,6 +434,25 @@ impl App {
     /// Entrada principal de teclado (overlays / focus / keymap).
     pub fn handle_key(&mut self, key: KeyEvent) {
         if self.handle_overlay_key(key) {
+            return;
+        }
+        // Preview MD: Alt+PgUp/PgDn rola o painel
+        if self.show_md_preview
+            && key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(
+                key.code,
+                KeyCode::PageUp | KeyCode::PageDown | KeyCode::Up | KeyCode::Down
+            )
+        {
+            match key.code {
+                KeyCode::PageUp | KeyCode::Up => {
+                    self.preview_scroll = self.preview_scroll.saturating_sub(3);
+                }
+                KeyCode::PageDown | KeyCode::Down => {
+                    self.preview_scroll = self.preview_scroll.saturating_add(3);
+                }
+                _ => {}
+            }
             return;
         }
         match self.focus {
@@ -1589,6 +1614,25 @@ impl App {
                     "soft wrap: off"
                 });
             }
+            Action::ToggleMdPreview => {
+                let lang = self
+                    .store
+                    .active()
+                    .ok()
+                    .map(|d| detect_language(d.path()))
+                    .unwrap_or_default();
+                if !lang.is_markdown_family() {
+                    self.set_status("preview só para Markdown/MDX");
+                } else {
+                    self.show_md_preview = !self.show_md_preview;
+                    self.preview_scroll = 0;
+                    self.set_status(if self.show_md_preview {
+                        "md preview: on · Alt+P / Ctrl+Shift+V · PgUp/PgDn no painel (foco editor)"
+                    } else {
+                        "md preview: off"
+                    });
+                }
+            }
             Action::ToggleComment => {
                 self.toggle_line_comment()?;
             }
@@ -2080,16 +2124,26 @@ impl App {
         let tabs = self.store.tab_summaries();
         render_tabs(frame, chunks[0], &tabs, &self.theme);
 
-        let editor_area = chunks[1];
-        self.last_editor_height = editor_area.height as usize;
-        self.ensure_cursor_visible();
-
-        // Atualiza syntax highlight a partir do buffer ativo
         let (lang, source) = match self.store.active() {
             Ok(d) => (detect_language(d.path()), d.buffer().as_string()),
             Err(_) => return,
         };
         self.highlight.update(lang, &source);
+
+        let show_preview = self.show_md_preview && lang.is_markdown_family();
+        let body = chunks[1];
+        let (editor_area, preview_area) = if show_preview {
+            let split = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(body);
+            (split[0], Some(split[1]))
+        } else {
+            (body, None)
+        };
+
+        self.last_editor_height = editor_area.height as usize;
+        self.ensure_cursor_visible();
 
         let doc = match self.store.active() {
             Ok(d) => d,
@@ -2108,6 +2162,20 @@ impl App {
             soft_wrap: self.soft_wrap,
         };
         render_editor(frame, editor_area, &view, &self.theme);
+
+        if let Some(prev_area) = preview_area {
+            let lines = render_preview_lines(&source);
+            // clamp scroll
+            if self.preview_scroll >= lines.len() && !lines.is_empty() {
+                self.preview_scroll = lines.len() - 1;
+            }
+            let view = MdPreviewView {
+                title: "preview md · Alt+P",
+                lines: &lines,
+                scroll: self.preview_scroll,
+            };
+            render_md_preview(frame, prev_area, &view, &self.theme);
+        }
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect) {

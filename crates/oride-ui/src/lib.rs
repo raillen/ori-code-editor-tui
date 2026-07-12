@@ -2,6 +2,7 @@
 
 mod color;
 mod editor;
+mod md_preview;
 mod palette;
 mod status;
 mod tabs;
@@ -11,6 +12,7 @@ mod tree;
 
 pub use color::{parse_color, ColorParseError};
 pub use editor::{render_editor, EditorView};
+pub use md_preview::{render_md_preview, MdPreviewView};
 pub use palette::{render_find_bar, render_palette, FindBarView, PaletteView};
 pub use status::{render_status, StatusModel};
 pub use tabs::render_tabs;
