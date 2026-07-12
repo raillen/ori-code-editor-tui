@@ -147,4 +147,13 @@ impl EmbeddedTerminal {
             pixel_height: 0,
         });
     }
+
+    pub fn grow(&mut self, delta: u16) {
+        self.height_lines = self.height_lines.saturating_add(delta).clamp(3, 40);
+        self.visible = true;
+    }
+
+    pub fn shrink(&mut self, delta: u16) {
+        self.height_lines = self.height_lines.saturating_sub(delta).max(3);
+    }
 }

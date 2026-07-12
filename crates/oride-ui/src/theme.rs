@@ -1,6 +1,6 @@
 //! Tema UI — defaults, config TOML e cores de syntax.
 
-use oride_config::ThemeUiConfig;
+use oride_config::{SyntaxColorsConfig, ThemeUiConfig};
 use oride_syntax::HighlightKind;
 use ratatui::style::{Color, Modifier, Style};
 use thiserror::Error;
@@ -34,8 +34,7 @@ pub struct SyntaxTheme {
 
 impl Default for SyntaxTheme {
     fn default() -> Self {
-        // Tokyo Night-ish defaults (works on dark terminals)
-        Self {
+        Self::from_config(&SyntaxColorsConfig::default()).unwrap_or(Self {
             comment: Color::DarkGray,
             keyword: Color::Magenta,
             string: Color::Green,
@@ -56,7 +55,34 @@ impl Default for SyntaxTheme {
             code: Color::Green,
             list_marker: Color::Yellow,
             quote: Color::DarkGray,
-        }
+        })
+    }
+}
+
+impl SyntaxTheme {
+    pub fn from_config(cfg: &SyntaxColorsConfig) -> Result<Self, ThemeBuildError> {
+        Ok(Self {
+            comment: parse_field("syntax.comment", &cfg.comment)?,
+            keyword: parse_field("syntax.keyword", &cfg.keyword)?,
+            string: parse_field("syntax.string", &cfg.string)?,
+            number: parse_field("syntax.number", &cfg.number)?,
+            type_name: parse_field("syntax.type_name", &cfg.type_name)?,
+            function: parse_field("syntax.function", &cfg.function)?,
+            operator: parse_field("syntax.operator", &cfg.operator)?,
+            punctuation: parse_field("syntax.punctuation", &cfg.punctuation)?,
+            variable: parse_field("syntax.variable", &cfg.variable)?,
+            constant: parse_field("syntax.constant", &cfg.constant)?,
+            property: parse_field("syntax.property", &cfg.property)?,
+            tag: parse_field("syntax.tag", &cfg.tag)?,
+            attribute: parse_field("syntax.attribute", &cfg.attribute)?,
+            heading: parse_field("syntax.heading", &cfg.heading)?,
+            emphasis: parse_field("syntax.emphasis", &cfg.emphasis)?,
+            strong: parse_field("syntax.strong", &cfg.strong)?,
+            link: parse_field("syntax.link", &cfg.link)?,
+            code: parse_field("syntax.code", &cfg.code)?,
+            list_marker: parse_field("syntax.list_marker", &cfg.list_marker)?,
+            quote: parse_field("syntax.quote", &cfg.quote)?,
+        })
     }
 }
 
@@ -100,19 +126,26 @@ pub struct ThemeBuildError {
 }
 
 impl UiTheme {
-    /// Constrói tema a partir da seção `[ui]` da config.
+    /// Constrói tema a partir de `[ui]` + `[syntax]` da config.
     pub fn from_config(cfg: &ThemeUiConfig) -> Result<Self, ThemeBuildError> {
+        Self::from_config_parts(cfg, &SyntaxColorsConfig::default())
+    }
+
+    pub fn from_config_parts(
+        ui: &ThemeUiConfig,
+        syntax: &SyntaxColorsConfig,
+    ) -> Result<Self, ThemeBuildError> {
         Ok(Self {
-            background: parse_field("background", &cfg.background)?,
-            foreground: parse_field("foreground", &cfg.foreground)?,
-            line_number: parse_field("line_number", &cfg.line_number)?,
-            status_bg: parse_field("status_bg", &cfg.status_bg)?,
-            status_fg: parse_field("status_fg", &cfg.status_fg)?,
-            status_dirty: parse_field("status_dirty", &cfg.status_dirty)?,
-            cursor_bg: parse_field("cursor_bg", &cfg.cursor_bg)?,
-            cursor_fg: parse_field("cursor_fg", &cfg.cursor_fg)?,
-            gutter_width: cfg.gutter_width.max(1),
-            syntax: SyntaxTheme::default(),
+            background: parse_field("background", &ui.background)?,
+            foreground: parse_field("foreground", &ui.foreground)?,
+            line_number: parse_field("line_number", &ui.line_number)?,
+            status_bg: parse_field("status_bg", &ui.status_bg)?,
+            status_fg: parse_field("status_fg", &ui.status_fg)?,
+            status_dirty: parse_field("status_dirty", &ui.status_dirty)?,
+            cursor_bg: parse_field("cursor_bg", &ui.cursor_bg)?,
+            cursor_fg: parse_field("cursor_fg", &ui.cursor_fg)?,
+            gutter_width: ui.gutter_width.max(1),
+            syntax: SyntaxTheme::from_config(syntax)?,
         })
     }
 

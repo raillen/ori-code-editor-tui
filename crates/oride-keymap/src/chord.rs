@@ -153,6 +153,7 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "f1" => KeyCode::F(1),
         "f2" => KeyCode::F(2),
         "f3" => KeyCode::F(3),
+        "f4" => KeyCode::F(4),
         "f5" => KeyCode::F(5),
         "f12" => KeyCode::F(12),
         "`" | "grave" | "backtick" => KeyCode::Char('`'),
@@ -161,6 +162,8 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "\"" | "quote" | "doublequote" | "dquote" => KeyCode::Char('"'),
         "'" | "apostrophe" | "squote" => KeyCode::Char('\''),
         "?" | "question" | "questionmark" => KeyCode::Char('?'),
+        "=" | "equals" | "equal" => KeyCode::Char('='),
+        "-" | "minus" | "dash" | "hyphen" => KeyCode::Char('-'),
         s if s.chars().count() == 1 => {
             let c = s.chars().next().unwrap();
             KeyCode::Char(c)
@@ -188,6 +191,7 @@ fn code_token(code: KeyCode) -> String {
         KeyCode::F(1) => "f1".into(),
         KeyCode::F(2) => "f2".into(),
         KeyCode::F(3) => "f3".into(),
+        KeyCode::F(4) => "f4".into(),
         KeyCode::F(5) => "f5".into(),
         KeyCode::F(12) => "f12".into(),
         KeyCode::Char(' ') => "space".into(),

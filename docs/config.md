@@ -55,3 +55,27 @@ cargo test -p oride-app rebind_ctrl_s
 cargo test -p oride-config
 cargo test -p oride-keymap
 ```
+
+## Seções P4+
+
+### `[editor]`
+- `tab_size`, `insert_spaces`, `format_on_save`, `use_editorconfig`
+
+### `[tree]`
+- `width`, `show_hidden`, `git_status`
+
+### `[terminal]`
+- `shell` (vazio = `$SHELL`), `default_height`
+
+### `[lsp]`
+- `enabled`, `oriscript_command` (array), `timeout_ms`
+
+### `[syntax]`
+Cores de highlight (`keyword`, `string`, `comment`, …) — nomes ou `#RRGGBB`.
+
+### Find
+- `Alt+R` alterna **regex**; `Alt+C` case; `Alt+A` acentos.
+
+### LSP atalhos
+- `Ctrl+Space` complete · `Ctrl+K` hover · `F4` goto · `Ctrl+Shift+I` format
+- `Ctrl+Shift+M` painel de diagnostics · `Ctrl+R` reload arquivo

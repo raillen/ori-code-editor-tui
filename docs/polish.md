@@ -1,36 +1,36 @@
-# Polimento 0.1 (P4)
+# Polimento 0.1 (P4) + LSP (P3)
 
-Fatias de DX para candidatar release **0.1.0** (sem LSP ainda).
+## Feito (alpha.5)
 
-## Feito (alpha.4)
+### P4
 
-| Feature | Atalho / notas |
-|---------|----------------|
-| Lista de keybinds | `F1` / `Ctrl+G` / `Ctrl+Shift+/` — todos os binds do mapa, com filtro |
-| Find compacto | `Ctrl+F` barra no rodapé · `F3` next · case/acentos |
-| Replace / replace all | `Ctrl+H` · `Alt+Enter` 1× · `Ctrl+Alt+Enter` all |
-| Seleção multi-linha | Shift+setas/Home/End · Ctrl+A · highlight azul |
-| Copy / Paste / Cut | `Ctrl+C` / `V` / `X` (+ buffer interno) |
-| Save as | `Ctrl+Shift+S` — browser · **Enter** salva · `→` entra pasta |
-| Save all | `Ctrl+Alt+S` |
-| Terminal | `Ctrl+"` (ou `Ctrl+'`) |
-| Open folder / file | browser (`Ctrl+O` / `Ctrl+P`) · confirma com **F2**/Ctrl+Enter/Ctrl+O |
-| Highlight de modal | linha selecionada ciano |
-| Aba ativa | chip branco (bg por célula); `Ctrl+PgUp/PgDn` · `Alt+←/→` |
-| Session leve | restaura workspace+tabs; salva ao sair |
-| Markdown futuro | `docs/markdown.md` § Futuro |
+| Feature | Notas |
+|---------|--------|
+| Lista de keybinds | `F1` / `Ctrl+G` / `Ctrl+Shift+/` |
+| Find compacto | case, acentos, **regex (`Alt+R`)**, replace all |
+| Seleção multi-linha | Shift+…, Ctrl+A, highlight azul |
+| Clipboard | arboard + **OSC52** + buffer interno |
+| Save as / save all | browser path |
+| Terminal | toggle + **Alt+= / Alt+-** altura |
+| `.editorconfig` | indent_style / indent_size ao abrir |
+| Reload disco | `notify` + prompt se dirty · `Ctrl+R` |
+| Config | `[editor]` `[tree]` `[terminal]` `[lsp]` `[syntax]` |
+| CI + install | `.github/workflows/ci.yml` · `scripts/install.sh` |
+| Session | workspace + tabs |
 
-## Ainda desejável no P4 / pré-0.1.0
+### P3 (LSP OriScript)
 
-- `.editorconfig`
-- Reload se arquivo mudou no disco (`notify`)
-- Resize altura do terminal (não só toggle)
-- Cores de syntax no TOML
-- Seções `[tree]` / `[terminal]` / `[lsp]` na config
-- CI + `scripts/install.sh`
-- Find case-sensitive / regex
+| Feature | Atalho |
+|---------|--------|
+| Spawn `oriscript lsp` | `[lsp]` config |
+| Diagnostics panel | `Ctrl+Shift+M` |
+| Completion | `Ctrl+Space` |
+| Hover | `Ctrl+K` |
+| Go to definition | `F4` |
+| Format document | `Ctrl+Shift+I` (+ `format_on_save`) |
 
-## Explicitamente depois
+## Pós-0.1
 
-- LSP OriScript (P3)
-- Preview MD, fence injections, MDX JSX (`docs/markdown.md`)
+- Preview MD, fence injections, MDX JSX
+- Search in project, splits, multi-cursor
+- Plugins externos

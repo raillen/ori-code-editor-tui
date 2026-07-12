@@ -5,7 +5,7 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.4`** — P2 + Markdown + **polimento** (find, clipboard, help, session).  
+Status: **`0.1.0-alpha.5`** — P2 + **P4 polish** + **P3 LSP** (diagnostics/complete/hover/goto/format).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
 Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/markdown.md) · [polish](docs/polish.md).
 
@@ -13,23 +13,21 @@ Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/ma
 
 - Multi-tab editor with undo/redo
 - Project tree (create files/folders) + icons (Nerd Fonts)
-- Embedded terminal (toggle with keyboard)
-- **Syntax highlight (tree-sitter):** `.oris`, Markdown (+ derivados/MDX), `.html`, `.css`, `.js`
-- **Markdown:** soft wrap, comment `<!-- -->`, continuação de listas, highlight rico
-- Config / keymaps / themes via **TOML**
-- OriScript intelligence via `oriscript lsp` (PATH) — planned P3
-- Command palette, fuzzy open, git status in tree
+- Embedded terminal (toggle + resize)
+- **Syntax highlight (tree-sitter):** `.oris`, Markdown, HTML, CSS, JS
+- Config / keymaps / themes / `[lsp]` via **TOML**
+- **OriScript LSP** via `oriscript lsp` on `PATH`
+- Command palette, fuzzy open, git status, find/replace (regex), session
 
 ## Build & run
 
 ```bash
 cargo build --release
+./scripts/install.sh                    # → ~/.local/bin/oride
 ./target/release/oride                  # CWD as workspace + empty buffer
 ./target/release/oride path/to/file     # open file
 ./target/release/oride path/to/dir      # open folder as workspace
 ./target/release/oride --version
-./target/release/oride --demo
-./target/release/oride README.md --stat
 ```
 
 ### Keys (defaults — rebind in TOML)
@@ -54,6 +52,11 @@ cargo build --release
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
 | `Ctrl+"` / `Ctrl+'` | Toggle terminal |
 | `F1` / `Ctrl+G` / `Ctrl+Shift+/` | **List all keybindings** (filter · ↑↓ · Esc) |
+| `Ctrl+Space` / `Ctrl+K` / `F4` | LSP complete / hover / goto |
+| `Ctrl+Shift+I` / `Ctrl+Shift+M` | LSP format / diagnostics panel |
+| `Alt+=` / `Alt+-` | Terminal taller / shorter |
+| `Ctrl+R` | Reload file from disk |
+| Find `Alt+R` | Toggle regex search |
 | `Ctrl+F` / `F3` | Find bar (footer) / next |
 | `Ctrl+H` | Replace (same bar) |
 | `Alt+C` / `Alt+A` | Toggle case / ignore accents (in find) |

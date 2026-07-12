@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use oride_config::Config;
+use oride_config::{resolve_indent_for_file, Config, EditorIndent};
 use oride_core::{DocumentError, DocumentId, DocumentStore};
 use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
 use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
+use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
 use oride_syntax::{continue_list_on_enter, detect_language, HighlightEngine, LanguageId};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
@@ -22,6 +23,7 @@ use ratatui::Frame;
 
 use crate::browser::{BrowseAction, BrowseMode, PathBrowser};
 use crate::clipboard;
+use crate::disk_watch::DiskWatch;
 use crate::find::FindState;
 use crate::session::Session;
 
@@ -59,6 +61,20 @@ enum Overlay {
     },
     /// Find/replace compacto (barra no rodapé; estado em `App.find`).
     Find,
+    Diagnostics {
+        selected: usize,
+    },
+    Completion {
+        items: Vec<String>,
+        selected: usize,
+    },
+    Hover {
+        text: String,
+    },
+    /// Arquivo mudou no disco — Enter recarrega, Esc ignora.
+    ReloadConfirm {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +112,12 @@ pub struct App {
     /// Soft wrap (default true em Markdown).
     soft_wrap: bool,
     find: FindState,
+    disk_watch: DiskWatch,
+    lsp: Option<LspClient>,
+    diagnostics: Vec<(PathBuf, Diagnostic)>,
+    show_diagnostics: bool,
+    lsp_doc_version: i32,
+    pending_reload: Option<PathBuf>,
 }
 
 impl App {
@@ -134,18 +156,47 @@ impl App {
         config: Config,
         workspace: PathBuf,
     ) -> Self {
-        let theme = UiTheme::from_config(&config.theme_ui).unwrap_or_else(|_| UiTheme::default());
+        let theme = UiTheme::from_config_parts(&config.theme_ui, &config.syntax)
+            .unwrap_or_else(|_| UiTheme::default());
         let keymap =
             Keymap::from_string_map(config.keys.iter().map(|(k, v)| (k.as_str(), v.as_str())))
                 .unwrap_or_else(|_| build_default_keymap());
 
-        let show_hidden = false;
+        let show_hidden = config.tree.show_hidden;
         let tree = ProjectTree::open(&workspace, show_hidden).ok();
-        let git_status = status_map(&workspace);
+        let git_status = if config.tree.git_status {
+            status_map(&workspace)
+        } else {
+            HashMap::new()
+        };
         let git_branch = current_branch(&workspace);
         let file_index = list_files_recursive(&workspace, show_hidden).unwrap_or_default();
 
-        let terminal = EmbeddedTerminal::spawn(&workspace, 80, 12).ok();
+        let term_h = config.terminal.default_height.max(3);
+        let terminal = EmbeddedTerminal::spawn(&workspace, 80, term_h)
+            .ok()
+            .map(|mut t| {
+                t.height_lines = term_h;
+                t
+            });
+
+        let disk_watch = DiskWatch::start(&workspace);
+        let lsp = if config.lsp.enabled {
+            match LspClient::spawn(
+                &config.lsp.oriscript_command,
+                &workspace,
+                config.lsp.timeout_ms,
+            ) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    // silencioso no boot; status depois se usuário pedir LSP
+                    let _ = e;
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         Self {
             store,
@@ -158,7 +209,7 @@ impl App {
             theme,
             show_line_numbers: config.show_line_numbers,
             keymap,
-            config,
+            config: config.clone(),
             last_editor_height: 20,
             focus: Focus::Editor,
             show_tree: true,
@@ -168,13 +219,19 @@ impl App {
             git_status,
             git_branch,
             use_nerd_icons: true,
-            tree_width: 28,
+            tree_width: config.tree.width.max(8),
             terminal,
             overlay: Overlay::None,
             file_index,
             highlight: HighlightEngine::new(),
-            soft_wrap: false,
+            soft_wrap: config.soft_wrap,
             find: FindState::default(),
+            disk_watch,
+            lsp,
+            diagnostics: Vec::new(),
+            show_diagnostics: false,
+            lsp_doc_version: 1,
+            pending_reload: None,
         }
     }
 
@@ -233,6 +290,120 @@ impl App {
         if let Some(term) = self.terminal.as_mut() {
             term.poll_output();
         }
+        self.poll_disk_changes();
+        self.poll_lsp_events();
+    }
+
+    fn poll_disk_changes(&mut self) {
+        let changed = self.disk_watch.poll();
+        let open: Vec<PathBuf> = self.store.open_paths();
+        for path in changed {
+            if open
+                .iter()
+                .any(|p| p == &path || p.ends_with(&path) || path.ends_with(p))
+            {
+                // se dirty, pede confirmação; senão recarrega
+                let dirty = self
+                    .store
+                    .active()
+                    .ok()
+                    .filter(|d| d.path() == Some(path.as_path()))
+                    .map(|d| d.is_dirty())
+                    .unwrap_or(false);
+                if dirty {
+                    self.pending_reload = Some(path.clone());
+                    self.overlay = Overlay::ReloadConfirm { path };
+                    self.set_status("arquivo mudou no disco — Enter recarrega · Esc ignora");
+                } else if let Ok(doc) = self.store.active_mut() {
+                    if doc.path() == Some(path.as_path()) {
+                        let _ = doc.reload_from_disk();
+                        self.lsp_sync_active();
+                        self.set_status(format!("recarregado: {}", path.display()));
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    fn poll_lsp_events(&mut self) {
+        let Some(lsp) = self.lsp.as_mut() else {
+            return;
+        };
+        for ev in lsp.poll_events() {
+            match ev {
+                LspEvent::Diagnostics { uri, diagnostics } => {
+                    let path = uri_to_path(&uri);
+                    self.diagnostics.retain(|(p, _)| Some(p) != path.as_ref());
+                    if let Some(p) = path {
+                        for d in diagnostics {
+                            self.diagnostics.push((p.clone(), d));
+                        }
+                    }
+                }
+                LspEvent::Exited => {
+                    self.lsp = None;
+                    self.set_status("LSP saiu");
+                    break;
+                }
+                LspEvent::ServerMessage(m) => self.set_status(m),
+            }
+        }
+    }
+
+    fn lsp_sync_active(&mut self) {
+        let Some(lsp) = self.lsp.as_mut() else {
+            return;
+        };
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let Some(path) = doc.path().map(Path::to_path_buf) else {
+            return;
+        };
+        let text = doc.buffer().as_string();
+        self.lsp_doc_version += 1;
+        let ver = self.lsp_doc_version;
+        let _ = lsp.did_change(&path, ver, &text);
+    }
+
+    fn lsp_open_active(&mut self) {
+        let Some(lsp) = self.lsp.as_mut() else {
+            return;
+        };
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let Some(path) = doc.path().map(Path::to_path_buf) else {
+            return;
+        };
+        if detect_language(Some(path.as_path())) != LanguageId::OriScript {
+            return;
+        }
+        let lang = "oriscript";
+        let text = doc.buffer().as_string();
+        let _ = lsp.did_open(&path, lang, &text);
+    }
+
+    fn apply_editorconfig_for_active(&mut self) {
+        if !self.config.editor.use_editorconfig {
+            return;
+        }
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let Some(path) = doc.path() else {
+            return;
+        };
+        let ind = resolve_indent_for_file(
+            path,
+            EditorIndent {
+                tab_size: self.config.editor.tab_size,
+                insert_spaces: self.config.editor.insert_spaces,
+            },
+        );
+        self.config.editor.tab_size = ind.tab_size;
+        self.config.editor.insert_spaces = ind.insert_spaces;
     }
 
     pub fn tick_messages(&mut self) {
@@ -288,6 +459,47 @@ impl App {
             }
             Overlay::Find => {
                 self.handle_find_key(key);
+                true
+            }
+            Overlay::Diagnostics { .. } => {
+                self.handle_diagnostics_key(key);
+                true
+            }
+            Overlay::Completion { .. } => {
+                self.handle_completion_key(key);
+                true
+            }
+            Overlay::Hover { .. } => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                    self.overlay = Overlay::None;
+                }
+                true
+            }
+            Overlay::ReloadConfirm { path } => {
+                match key.code {
+                    KeyCode::Enter => {
+                        let path = path.clone();
+                        self.overlay = Overlay::None;
+                        if let Ok(doc) = self.store.active_mut() {
+                            if doc.path() == Some(path.as_path()) {
+                                match doc.reload_from_disk() {
+                                    Ok(()) => {
+                                        self.lsp_sync_active();
+                                        self.set_status(format!("recarregado: {}", path.display()));
+                                    }
+                                    Err(e) => self.set_status(format!("reload: {e}")),
+                                }
+                            }
+                        }
+                        self.pending_reload = None;
+                    }
+                    KeyCode::Esc => {
+                        self.overlay = Overlay::None;
+                        self.pending_reload = None;
+                        self.set_status("reload ignorado");
+                    }
+                    _ => {}
+                }
                 true
             }
         }
@@ -410,6 +622,8 @@ impl App {
                 } else {
                     let lang = detect_language(Some(path.as_path()));
                     self.apply_language_defaults(lang);
+                    self.apply_editorconfig_for_active();
+                    self.lsp_open_active();
                     self.focus = Focus::Editor;
                     self.scroll_y = 0;
                     self.set_status(format!("aberto · {}", path.display()));
@@ -469,6 +683,10 @@ impl App {
             }
             KeyCode::Char('a') if alt && !ctrl => {
                 self.find.toggle_accents();
+                self.recompute_find_and_jump();
+            }
+            KeyCode::Char('r') if alt && !ctrl => {
+                self.find.toggle_regex();
                 self.recompute_find_and_jump();
             }
             KeyCode::Char('h') if ctrl => {
@@ -1023,6 +1241,22 @@ impl App {
                 match doc.save_to(None) {
                     Ok(()) => {
                         self.quit_confirm_pending = false;
+                        if let Ok(doc) = self.store.active() {
+                            if let Some(path) = doc.path() {
+                                self.disk_watch.mark_saved(path);
+                                if let Some(lsp) = self.lsp.as_mut() {
+                                    let text = doc.buffer().as_string();
+                                    let _ = lsp.did_save(path, &text);
+                                }
+                            }
+                        }
+                        if self.config.editor.format_on_save {
+                            let _ = self.lsp_format();
+                            // re-save after format
+                            if let Ok(doc) = self.store.active_mut() {
+                                let _ = doc.save_to(None);
+                            }
+                        }
                         self.set_status("saved");
                         self.refresh_git_and_index();
                     }
@@ -1230,6 +1464,55 @@ impl App {
                     self.set_status("terminal unavailable");
                 }
             }
+            Action::TerminalGrow => {
+                let h = if let Some(term) = self.terminal.as_mut() {
+                    term.grow(2);
+                    Some(term.height_lines)
+                } else {
+                    None
+                };
+                if let Some(h) = h {
+                    self.set_status(format!("terminal height {h}"));
+                }
+            }
+            Action::TerminalShrink => {
+                let h = if let Some(term) = self.terminal.as_mut() {
+                    term.shrink(2);
+                    Some(term.height_lines)
+                } else {
+                    None
+                };
+                if let Some(h) = h {
+                    self.set_status(format!("terminal height {h}"));
+                }
+            }
+            Action::ReloadFile => match self.store.active_mut() {
+                Ok(doc) => match doc.reload_from_disk() {
+                    Ok(()) => {
+                        self.apply_editorconfig_for_active();
+                        self.lsp_sync_active();
+                        self.set_status("file reloaded");
+                    }
+                    Err(e) => self.set_status(format!("reload: {e}")),
+                },
+                Err(e) => self.set_status(format!("reload: {e}")),
+            },
+            Action::ToggleDiagnostics => {
+                self.show_diagnostics = !self.show_diagnostics;
+                if self.show_diagnostics {
+                    self.overlay = Overlay::Diagnostics { selected: 0 };
+                    self.set_status(format!("{} diagnostics", self.diagnostics.len()));
+                } else {
+                    if matches!(self.overlay, Overlay::Diagnostics { .. }) {
+                        self.overlay = Overlay::None;
+                    }
+                }
+            }
+            Action::LspComplete => self.lsp_complete()?,
+            Action::LspHover => self.lsp_hover()?,
+            Action::LspGotoDefinition => self.lsp_goto()?,
+            Action::LspFormat => self.lsp_format()?,
+
             Action::FocusTree => {
                 self.show_tree = true;
                 if self.tree.is_none() {
@@ -1656,6 +1939,65 @@ impl App {
                 };
                 render_find_bar(frame, area, &view);
             }
+            Overlay::Diagnostics { selected } => {
+                let items: Vec<String> = self
+                    .diagnostics
+                    .iter()
+                    .map(|(path, d)| {
+                        format!(
+                            "L{}:{}  {}  {}",
+                            d.range.start.line + 1,
+                            d.range.start.character + 1,
+                            path.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
+                            d.message
+                        )
+                    })
+                    .collect();
+                let view = PaletteView {
+                    title: "diagnostics (Enter jump · Esc)",
+                    query: "",
+                    items: &items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter salta · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::Completion { items, selected } => {
+                let view = PaletteView {
+                    title: "completions",
+                    query: "",
+                    items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter insere · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::Hover { text } => {
+                let items: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+                let view = PaletteView {
+                    title: "hover",
+                    query: "",
+                    items: &items,
+                    selected: 0,
+                    hint: "Esc fecha",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::ReloadConfirm { path } => {
+                let items = [
+                    format!("arquivo: {}", path.display()),
+                    "Enter = recarregar do disco (descarta edições)".into(),
+                    "Esc = manter buffer".into(),
+                ];
+                let view = PaletteView {
+                    title: "arquivo mudou no disco",
+                    query: "",
+                    items: &items,
+                    selected: 0,
+                    hint: "Enter / Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
         }
     }
 
@@ -1770,12 +2112,202 @@ impl App {
         };
         render_status(frame, area, &status, &self.theme);
     }
+
+    fn handle_diagnostics_key(&mut self, key: KeyEvent) {
+        let Overlay::Diagnostics { selected } = &self.overlay else {
+            return;
+        };
+        let mut selected = *selected;
+        let n = self.diagnostics.len();
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.overlay = Overlay::None,
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if n > 0 => selected = (selected + 1).min(n - 1),
+            KeyCode::Enter if n > 0 => {
+                if let Some((path, diag)) = self.diagnostics.get(selected).cloned() {
+                    let _ = self.store.open_path(&path);
+                    if let Ok(doc) = self.store.active_mut() {
+                        let line = diag.range.start.line as usize;
+                        let col = diag.range.start.character as usize;
+                        if let Ok(off) = doc
+                            .buffer()
+                            .caret_to_byte(oride_core::Caret::new(line, col))
+                        {
+                            doc.jump_to_byte(off);
+                        }
+                    }
+                    self.scroll_y = 0;
+                    self.ensure_cursor_visible();
+                    self.overlay = Overlay::None;
+                    self.focus = Focus::Editor;
+                }
+            }
+            _ => {}
+        }
+        if matches!(self.overlay, Overlay::Diagnostics { .. }) {
+            self.overlay = Overlay::Diagnostics { selected };
+        }
+    }
+
+    fn handle_completion_key(&mut self, key: KeyEvent) {
+        let Overlay::Completion { items, selected } = &self.overlay else {
+            return;
+        };
+        let mut selected = *selected;
+        let items = items.clone();
+        let n = items.len();
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                return;
+            }
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if n > 0 => selected = (selected + 1).min(n - 1),
+            KeyCode::Enter if n > 0 => {
+                if let Some(item) = items.get(selected) {
+                    let insert = item.split(" — ").next().unwrap_or(item).to_string();
+                    let _ = self.store.active_mut().map(|d| d.insert_text(&insert));
+                    self.lsp_sync_active();
+                }
+                self.overlay = Overlay::None;
+                return;
+            }
+            _ => {}
+        }
+        self.overlay = Overlay::Completion { items, selected };
+    }
+
+    fn lsp_complete(&mut self) -> Result<(), DocumentError> {
+        let (path, pos) = self.active_lsp_pos()?;
+        let Some(lsp) = self.lsp.as_mut() else {
+            self.set_status("LSP offline (oriscript lsp?)");
+            return Ok(());
+        };
+        match lsp.completion(&path, pos) {
+            Ok(items) if items.is_empty() => self.set_status("no completions"),
+            Ok(items) => {
+                let labels: Vec<String> = items
+                    .into_iter()
+                    .map(|i| match i.detail {
+                        Some(d) => format!("{} — {}", i.label, d),
+                        None => i.label,
+                    })
+                    .collect();
+                self.overlay = Overlay::Completion {
+                    items: labels,
+                    selected: 0,
+                };
+            }
+            Err(e) => self.set_status(format!("complete: {e}")),
+        }
+        Ok(())
+    }
+
+    fn lsp_hover(&mut self) -> Result<(), DocumentError> {
+        let (path, pos) = self.active_lsp_pos()?;
+        let Some(lsp) = self.lsp.as_mut() else {
+            self.set_status("LSP offline");
+            return Ok(());
+        };
+        match lsp.hover(&path, pos) {
+            Ok(Some(h)) => {
+                self.overlay = Overlay::Hover { text: h.contents };
+            }
+            Ok(None) => self.set_status("no hover"),
+            Err(e) => self.set_status(format!("hover: {e}")),
+        }
+        Ok(())
+    }
+
+    fn lsp_goto(&mut self) -> Result<(), DocumentError> {
+        let (path, pos) = self.active_lsp_pos()?;
+        let Some(lsp) = self.lsp.as_mut() else {
+            self.set_status("LSP offline");
+            return Ok(());
+        };
+        match lsp.definition(&path, pos) {
+            Ok(Some(loc)) => {
+                if let Some(p) = uri_to_path(&loc.uri) {
+                    let _ = self.store.open_path(&p);
+                    if let Ok(doc) = self.store.active_mut() {
+                        let line = loc.range.start.line as usize;
+                        let col = loc.range.start.character as usize;
+                        if let Ok(off) = doc
+                            .buffer()
+                            .caret_to_byte(oride_core::Caret::new(line, col))
+                        {
+                            doc.jump_to_byte(off);
+                        }
+                    }
+                    self.apply_editorconfig_for_active();
+                    self.lsp_open_active();
+                    self.focus = Focus::Editor;
+                    self.ensure_cursor_visible();
+                    self.set_status(format!("goto {}", p.display()));
+                }
+            }
+            Ok(None) => self.set_status("no definition"),
+            Err(e) => self.set_status(format!("goto: {e}")),
+        }
+        Ok(())
+    }
+
+    fn lsp_format(&mut self) -> Result<(), DocumentError> {
+        let path = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(Path::to_path_buf));
+        let Some(path) = path else {
+            self.set_status("format: sem path");
+            return Ok(());
+        };
+        let Some(lsp) = self.lsp.as_mut() else {
+            // fallback: oriscript fmt via std process se existir
+            self.set_status("LSP offline — format indisponível");
+            return Ok(());
+        };
+        match lsp.formatting(&path) {
+            Ok(Some(text)) => {
+                self.store.active_mut()?.replace_full_text(&text)?;
+                self.lsp_sync_active();
+                self.set_status("formatted");
+            }
+            Ok(None) => self.set_status("format: sem edits"),
+            Err(e) => self.set_status(format!("format: {e}")),
+        }
+        Ok(())
+    }
+
+    fn active_lsp_pos(&self) -> Result<(PathBuf, LspPos), DocumentError> {
+        let doc = self.store.active()?;
+        let path = doc.path().map(Path::to_path_buf).ok_or_else(|| {
+            DocumentError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "no path",
+            ))
+        })?;
+        let caret = doc.caret()?;
+        Ok((
+            path,
+            LspPos {
+                line: caret.line as u32,
+                character: caret.column as u32,
+            },
+        ))
+    }
 }
 
 fn build_default_keymap() -> Keymap {
     let defaults = Config::default();
     Keymap::from_string_map(defaults.keys.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .expect("default key bindings must parse")
+}
+
+fn uri_to_path(uri: &str) -> Option<PathBuf> {
+    let path = uri.strip_prefix("file://").unwrap_or(uri);
+    let path = path.replace("%20", " ");
+    Some(PathBuf::from(path))
 }
 
 fn fuzzy_match(query: &str, candidate: &str) -> bool {

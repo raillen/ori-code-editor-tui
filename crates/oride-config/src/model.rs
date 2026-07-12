@@ -8,11 +8,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Nome lógico do tema (reserva futura; cores vêm de `[ui]`).
+    /// Nome lógico do tema (reserva futura; cores vêm de `[ui]` / `[syntax]`).
     pub theme: String,
     pub show_line_numbers: bool,
+    pub soft_wrap: bool,
     pub editor: EditorConfig,
     pub theme_ui: ThemeUiConfig,
+    pub syntax: SyntaxColorsConfig,
+    pub tree: TreeConfig,
+    pub terminal: TerminalConfig,
+    pub lsp: LspConfig,
     /// Chord string → action id (`"ctrl+s" = "save"`).
     pub keys: BTreeMap<String, String>,
 }
@@ -22,8 +27,13 @@ impl Default for Config {
         Self {
             theme: "default".into(),
             show_line_numbers: true,
+            soft_wrap: false,
             editor: EditorConfig::default(),
             theme_ui: ThemeUiConfig::default(),
+            syntax: SyntaxColorsConfig::default(),
+            tree: TreeConfig::default(),
+            terminal: TerminalConfig::default(),
+            lsp: LspConfig::default(),
             keys: default_key_bindings(),
         }
     }
@@ -34,6 +44,9 @@ impl Default for Config {
 pub struct EditorConfig {
     pub tab_size: u8,
     pub insert_spaces: bool,
+    pub format_on_save: bool,
+    /// Aplicar `.editorconfig` ao abrir arquivo (indent).
+    pub use_editorconfig: bool,
 }
 
 impl Default for EditorConfig {
@@ -41,6 +54,62 @@ impl Default for EditorConfig {
         Self {
             tab_size: 4,
             insert_spaces: true,
+            format_on_save: false,
+            use_editorconfig: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TreeConfig {
+    pub width: u16,
+    pub show_hidden: bool,
+    pub git_status: bool,
+}
+
+impl Default for TreeConfig {
+    fn default() -> Self {
+        Self {
+            width: 28,
+            show_hidden: false,
+            git_status: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalConfig {
+    /// Shell; vazio = `$SHELL` ou `/bin/sh`.
+    pub shell: String,
+    pub default_height: u16,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            shell: String::new(),
+            default_height: 10,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LspConfig {
+    pub enabled: bool,
+    /// Ex.: `["oriscript", "lsp"]`
+    pub oriscript_command: Vec<String>,
+    pub timeout_ms: u64,
+}
+
+impl Default for LspConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            oriscript_command: vec!["oriscript".into(), "lsp".into()],
+            timeout_ms: 10_000,
         }
     }
 }
@@ -76,11 +145,66 @@ impl Default for ThemeUiConfig {
     }
 }
 
+/// Cores de syntax highlight (opcional no TOML `[syntax]`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SyntaxColorsConfig {
+    pub comment: String,
+    pub keyword: String,
+    pub string: String,
+    pub number: String,
+    pub type_name: String,
+    pub function: String,
+    pub operator: String,
+    pub punctuation: String,
+    pub variable: String,
+    pub constant: String,
+    pub property: String,
+    pub tag: String,
+    pub attribute: String,
+    pub heading: String,
+    pub emphasis: String,
+    pub strong: String,
+    pub link: String,
+    pub code: String,
+    pub list_marker: String,
+    pub quote: String,
+}
+
+impl Default for SyntaxColorsConfig {
+    fn default() -> Self {
+        Self {
+            comment: "darkgray".into(),
+            keyword: "magenta".into(),
+            string: "green".into(),
+            number: "yellow".into(),
+            type_name: "cyan".into(),
+            function: "blue".into(),
+            operator: "reset".into(),
+            punctuation: "darkgray".into(),
+            variable: "reset".into(),
+            constant: "yellow".into(),
+            property: "cyan".into(),
+            tag: "red".into(),
+            attribute: "yellow".into(),
+            heading: "magenta".into(),
+            emphasis: "cyan".into(),
+            strong: "yellow".into(),
+            link: "blue".into(),
+            code: "green".into(),
+            list_marker: "yellow".into(),
+            quote: "darkgray".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 struct EditorConfigPartial {
     tab_size: Option<u8>,
     insert_spaces: Option<bool>,
+    format_on_save: Option<bool>,
+    use_editorconfig: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -97,15 +221,67 @@ struct ThemeUiConfigPartial {
     gutter_width: Option<u16>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct SyntaxPartial {
+    comment: Option<String>,
+    keyword: Option<String>,
+    string: Option<String>,
+    number: Option<String>,
+    type_name: Option<String>,
+    function: Option<String>,
+    operator: Option<String>,
+    punctuation: Option<String>,
+    variable: Option<String>,
+    constant: Option<String>,
+    property: Option<String>,
+    tag: Option<String>,
+    attribute: Option<String>,
+    heading: Option<String>,
+    emphasis: Option<String>,
+    strong: Option<String>,
+    link: Option<String>,
+    code: Option<String>,
+    list_marker: Option<String>,
+    quote: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct TreePartial {
+    width: Option<u16>,
+    show_hidden: Option<bool>,
+    git_status: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct TerminalPartial {
+    shell: Option<String>,
+    default_height: Option<u16>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+struct LspPartial {
+    enabled: Option<bool>,
+    oriscript_command: Option<Vec<String>>,
+    timeout_ms: Option<u64>,
+}
+
 /// Arquivo TOML real (campos opcionais).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct RawConfigFile {
     theme: Option<String>,
     show_line_numbers: Option<bool>,
+    soft_wrap: Option<bool>,
     editor: Option<EditorConfigPartial>,
-    /// Cores em `[ui]` (evita conflito com `theme = "name"`).
     ui: Option<ThemeUiConfigPartial>,
+    syntax: Option<SyntaxPartial>,
+    tree: Option<TreePartial>,
+    terminal: Option<TerminalPartial>,
+    lsp: Option<LspPartial>,
     keys: Option<BTreeMap<String, String>>,
 }
 
@@ -117,6 +293,9 @@ impl Config {
         if let Some(v) = raw.show_line_numbers {
             self.show_line_numbers = v;
         }
+        if let Some(v) = raw.soft_wrap {
+            self.soft_wrap = v;
+        }
         if let Some(ed) = raw.editor {
             if let Some(v) = ed.tab_size {
                 self.editor.tab_size = v.max(1);
@@ -124,9 +303,50 @@ impl Config {
             if let Some(v) = ed.insert_spaces {
                 self.editor.insert_spaces = v;
             }
+            if let Some(v) = ed.format_on_save {
+                self.editor.format_on_save = v;
+            }
+            if let Some(v) = ed.use_editorconfig {
+                self.editor.use_editorconfig = v;
+            }
         }
         if let Some(ui) = raw.ui {
             merge_theme_ui(&mut self.theme_ui, ui);
+        }
+        if let Some(sx) = raw.syntax {
+            merge_syntax(&mut self.syntax, sx);
+        }
+        if let Some(t) = raw.tree {
+            if let Some(v) = t.width {
+                self.tree.width = v.max(8);
+            }
+            if let Some(v) = t.show_hidden {
+                self.tree.show_hidden = v;
+            }
+            if let Some(v) = t.git_status {
+                self.tree.git_status = v;
+            }
+        }
+        if let Some(t) = raw.terminal {
+            if let Some(v) = t.shell {
+                self.terminal.shell = v;
+            }
+            if let Some(v) = t.default_height {
+                self.terminal.default_height = v.max(3);
+            }
+        }
+        if let Some(l) = raw.lsp {
+            if let Some(v) = l.enabled {
+                self.lsp.enabled = v;
+            }
+            if let Some(v) = l.oriscript_command {
+                if !v.is_empty() {
+                    self.lsp.oriscript_command = v;
+                }
+            }
+            if let Some(v) = l.timeout_ms {
+                self.lsp.timeout_ms = v.max(500);
+            }
         }
         if let Some(keys) = raw.keys {
             for (k, v) in keys {
@@ -166,11 +386,40 @@ fn merge_theme_ui(dst: &mut ThemeUiConfig, src: ThemeUiConfigPartial) {
     }
 }
 
-/// Bindings padrão (P0 + P1 shell).
+fn merge_syntax(dst: &mut SyntaxColorsConfig, src: SyntaxPartial) {
+    macro_rules! set {
+        ($field:ident) => {
+            if let Some(v) = src.$field {
+                dst.$field = v;
+            }
+        };
+    }
+    set!(comment);
+    set!(keyword);
+    set!(string);
+    set!(number);
+    set!(type_name);
+    set!(function);
+    set!(operator);
+    set!(punctuation);
+    set!(variable);
+    set!(constant);
+    set!(property);
+    set!(tag);
+    set!(attribute);
+    set!(heading);
+    set!(emphasis);
+    set!(strong);
+    set!(link);
+    set!(code);
+    set!(list_marker);
+    set!(quote);
+}
+
+/// Bindings padrão (P0–P4 + P3 LSP).
 pub fn default_key_bindings() -> BTreeMap<String, String> {
     let pairs = [
         ("ctrl+s", "save"),
-        // Save as: vários chords — Ctrl+Shift+S some em muitos terminais
         ("ctrl+shift+s", "save_as"),
         ("f12", "save_as"),
         ("alt+shift+s", "save_as"),
@@ -188,7 +437,6 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("shift+f3", "find_prev"),
         ("ctrl+h", "replace"),
         ("ctrl+shift+h", "replace"),
-        // Listar todos os atalhos
         ("f1", "help"),
         ("ctrl+g", "help"),
         ("ctrl+shift+/", "help"),
@@ -215,8 +463,6 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+shift+home", "move_doc_start_extend"),
         ("ctrl+shift+end", "move_doc_end_extend"),
         ("tab", "insert_tab"),
-        // P1 / P2 shell
-        // Foco explícito editor ↔ árvore (não esconde o painel)
         ("ctrl+b", "focus_tree"),
         ("ctrl+e", "focus_editor"),
         ("ctrl+shift+b", "toggle_tree"),
@@ -224,6 +470,8 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+\"", "toggle_terminal"),
         ("ctrl+'", "toggle_terminal"),
         ("ctrl+`", "toggle_terminal"),
+        ("alt+=", "terminal_grow"),
+        ("alt+-", "terminal_shrink"),
         ("ctrl+\\", "focus_tree"),
         ("ctrl+o", "open_folder"),
         ("alt+z", "toggle_soft_wrap"),
@@ -241,6 +489,13 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+shift+n", "tree_new_file"),
         ("ctrl+shift+f", "tree_new_dir"),
         ("f5", "tree_refresh"),
+        // P3 LSP
+        ("ctrl+space", "lsp_complete"),
+        ("ctrl+k", "lsp_hover"),
+        ("f4", "lsp_goto_definition"),
+        ("ctrl+shift+i", "lsp_format"),
+        ("ctrl+shift+m", "toggle_diagnostics"),
+        ("ctrl+r", "reload_file"),
     ];
     pairs
         .into_iter()

@@ -3,6 +3,7 @@
 mod app;
 mod browser;
 mod clipboard;
+mod disk_watch;
 mod find;
 mod run;
 mod session;

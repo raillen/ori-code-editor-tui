@@ -310,6 +310,51 @@ impl Document {
         self.path = Some(path);
     }
 
+    /// Recarrega o conteúdo do path no disco (descarta mudanças locais).
+    pub fn reload_from_disk(&mut self) -> Result<(), DocumentError> {
+        let path = self.path.clone().ok_or_else(|| {
+            DocumentError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "document has no path",
+            ))
+        })?;
+        let text = std::fs::read_to_string(&path)?;
+        self.buffer = Buffer::from_text(&text);
+        let len = self.buffer.len_bytes();
+        let head = self.selection.head.as_usize().min(len);
+        self.selection = Selection::caret(ByteOffset::new(head));
+        self.dirty = false;
+        self.preferred_column = None;
+        self.undo = UndoStack::new();
+        Ok(())
+    }
+
+    /// Substitui o texto inteiro do buffer (ex.: format LSP), preservando path.
+    pub fn replace_full_text(&mut self, text: &str) -> Result<(), DocumentError> {
+        let old = self.buffer.as_string();
+        if old == text {
+            return Ok(());
+        }
+        // delete all + insert
+        let end = ByteOffset::new(self.buffer.len_bytes());
+        if end.as_usize() > 0 {
+            let removed = self.buffer.delete_range(ByteOffset::new(0), end)?;
+            self.undo.push_applied(Edit::Delete {
+                at: ByteOffset::new(0),
+                text: removed,
+            });
+        }
+        self.buffer.insert(ByteOffset::new(0), text)?;
+        self.undo.push_applied(Edit::Insert {
+            at: ByteOffset::new(0),
+            text: text.to_string(),
+        });
+        self.selection = Selection::caret(ByteOffset::new(0));
+        self.dirty = true;
+        self.preferred_column = None;
+        Ok(())
+    }
+
     /// Serializa o buffer para disco no path atual ou `path` fornecido.
     pub fn save_to(&mut self, path: Option<&Path>) -> Result<(), DocumentError> {
         let target = match path {

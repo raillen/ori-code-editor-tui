@@ -9,6 +9,7 @@ members = [
     "crates/oride-terminal",
     "crates/oride-syntax",
     "crates/tree-sitter-oriscript",
+    "crates/oride-lsp",
     "crates/oride-ui",
     "crates/oride-app",
     "crates/oride",
@@ -16,7 +17,7 @@ members = [
 default-members = ["crates/oride"]
 
 [workspace.package]
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/raillen/ori-code-editor-tui"
@@ -33,7 +34,11 @@ oride-terminal = { path = "crates/oride-terminal" }
 oride-syntax = { path = "crates/oride-syntax" }
 oride-ui = { path = "crates/oride-ui" }
 oride-app = { path = "crates/oride-app" }
+oride-lsp = { path = "crates/oride-lsp" }
 tree-sitter-oriscript = { path = "crates/tree-sitter-oriscript" }
+serde_json = "1"
+regex = "1"
+notify = "7"
 ropey = "1.6"
 thiserror = "2"
 anyhow = "1"
@@ -51,3 +56,4 @@ tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-md = "0.3"
 arboard = "3"
+base64 = "0.22"

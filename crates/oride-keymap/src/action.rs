@@ -28,6 +28,8 @@ pub enum Action {
     PageDown,
     ToggleTree,
     ToggleTerminal,
+    TerminalGrow,
+    TerminalShrink,
     FocusTree,
     FocusEditor,
     FocusTerminal,
@@ -44,7 +46,6 @@ pub enum Action {
     FocusToggleTreeEditor,
     ToggleSoftWrap,
     ToggleComment,
-    // P4 polish
     Help,
     Find,
     FindNext,
@@ -53,6 +54,13 @@ pub enum Action {
     Copy,
     Paste,
     Cut,
+    ReloadFile,
+    // P3 LSP
+    LspComplete,
+    LspHover,
+    LspGotoDefinition,
+    LspFormat,
+    ToggleDiagnostics,
 }
 
 impl Action {
@@ -82,6 +90,8 @@ impl Action {
             Self::PageDown => "Page down",
             Self::ToggleTree => "Toggle project tree",
             Self::ToggleTerminal => "Toggle terminal",
+            Self::TerminalGrow => "Terminal taller",
+            Self::TerminalShrink => "Terminal shorter",
             Self::FocusTree => "Focus tree",
             Self::FocusEditor => "Focus editor",
             Self::FocusTerminal => "Focus terminal",
@@ -106,6 +116,12 @@ impl Action {
             Self::Copy => "Copy",
             Self::Paste => "Paste",
             Self::Cut => "Cut",
+            Self::ReloadFile => "Reload file from disk",
+            Self::LspComplete => "LSP: complete",
+            Self::LspHover => "LSP: hover",
+            Self::LspGotoDefinition => "LSP: go to definition",
+            Self::LspFormat => "LSP: format document",
+            Self::ToggleDiagnostics => "Toggle diagnostics panel",
         }
     }
 
@@ -135,6 +151,8 @@ impl Action {
             Action::Help,
             Action::ToggleTree,
             Action::ToggleTerminal,
+            Action::TerminalGrow,
+            Action::TerminalShrink,
             Action::FocusTree,
             Action::FocusEditor,
             Action::FocusToggleTreeEditor,
@@ -142,6 +160,12 @@ impl Action {
             Action::TreeNewFile,
             Action::TreeNewDir,
             Action::TreeRefresh,
+            Action::ReloadFile,
+            Action::LspComplete,
+            Action::LspHover,
+            Action::LspGotoDefinition,
+            Action::LspFormat,
+            Action::ToggleDiagnostics,
             Action::Quit,
         ]
     }
@@ -184,6 +208,8 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "page_down" => Action::PageDown,
         "toggle_tree" => Action::ToggleTree,
         "toggle_terminal" => Action::ToggleTerminal,
+        "terminal_grow" => Action::TerminalGrow,
+        "terminal_shrink" => Action::TerminalShrink,
         "focus_tree" => Action::FocusTree,
         "focus_editor" => Action::FocusEditor,
         "focus_terminal" => Action::FocusTerminal,
@@ -208,6 +234,12 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "copy" => Action::Copy,
         "paste" => Action::Paste,
         "cut" => Action::Cut,
+        "reload_file" => Action::ReloadFile,
+        "lsp_complete" => Action::LspComplete,
+        "lsp_hover" => Action::LspHover,
+        "lsp_goto_definition" => Action::LspGotoDefinition,
+        "lsp_format" => Action::LspFormat,
+        "toggle_diagnostics" => Action::ToggleDiagnostics,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)
@@ -218,9 +250,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_polish_actions() {
+    fn parses_polish_and_lsp_actions() {
         assert_eq!(parse_action("find").unwrap(), Action::Find);
-        assert_eq!(parse_action("save_all").unwrap(), Action::SaveAll);
-        assert_eq!(parse_action("help").unwrap(), Action::Help);
+        assert_eq!(parse_action("lsp_format").unwrap(), Action::LspFormat);
+        assert_eq!(
+            parse_action("toggle_diagnostics").unwrap(),
+            Action::ToggleDiagnostics
+        );
     }
 }

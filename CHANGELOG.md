@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+### Added (P4 final)
+
+- `.editorconfig` (indent_style / indent_size)
+- Reload on disk change (`notify`) + `Ctrl+R` + prompt se dirty
+- Terminal resize (`Alt+=` / `Alt+-`)
+- Find **regex** (`Alt+R`)
+- Config sections `[tree]` `[terminal]` `[lsp]` `[syntax]` + `format_on_save`
+- Clipboard **OSC52** (SSH)
+- CI workflow + `scripts/install.sh`
+- `docs/plugin-api.md`
+
+### Added (P3 LSP)
+
+- Crate `oride-lsp` — cliente stdio JSON-RPC
+- Diagnostics panel (`Ctrl+Shift+M`)
+- Completion (`Ctrl+Space`) · Hover (`Ctrl+K`) · Goto (`F4`) · Format (`Ctrl+Shift+I`)
+- Sync didOpen/didChange/didSave para buffers `.oris`
+
 ## 0.1.0-alpha.4
 
 ### Added (P4 polish)

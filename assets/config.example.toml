@@ -69,3 +69,28 @@ gutter_width = 5
 "ctrl+pagedown" = "next_tab"
 "alt+left" = "prev_tab"
 "alt+right" = "next_tab"
+
+[editor]
+tab_size = 4
+insert_spaces = true
+format_on_save = false
+use_editorconfig = true
+
+[tree]
+width = 28
+show_hidden = false
+git_status = true
+
+[terminal]
+# shell = "/bin/zsh"
+default_height = 10
+
+[lsp]
+enabled = true
+oriscript_command = ["oriscript", "lsp"]
+timeout_ms = 10000
+
+[syntax]
+keyword = "magenta"
+string = "green"
+comment = "darkgray"
