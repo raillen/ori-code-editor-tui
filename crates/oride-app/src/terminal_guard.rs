@@ -8,7 +8,8 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement, EnterAlternateScreen,
+    LeaveAlternateScreen,
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
@@ -24,17 +25,29 @@ impl TerminalGuard {
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
 
-        // Melhora Ctrl+Enter, Ctrl+Shift+*, Shift+setas em terminais modernos
-        // (kitty/wezterm/foot/ghostty). Falha silenciosa se não suportado.
-        // Só disambiguate + alternate — REPORT_ALL_KEYS quebra digitação em alguns TTY.
-        let keyboard_enhanced = execute!(
-            stdout,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+        // Kitty/WezTerm/Foot/Ghostty: reporta Ctrl+Shift+letra corretamente.
+        // Sem isso, Ctrl+Shift+S vira Ctrl+S e o Save As nunca dispara.
+        let keyboard_enhanced = if supports_keyboard_enhancement().unwrap_or(false) {
+            execute!(
+                stdout,
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                )
             )
-        )
-        .is_ok();
+            .is_ok()
+        } else {
+            // Tenta mesmo assim — alguns emuladores respondem ao push sem o query.
+            execute!(
+                stdout,
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                )
+            )
+            .is_ok()
+        };
 
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;

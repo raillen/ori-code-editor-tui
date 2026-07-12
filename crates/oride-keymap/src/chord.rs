@@ -13,44 +13,23 @@ pub struct KeyChord {
 }
 
 impl KeyChord {
+    /// Normaliza um evento de teclado para lookup estável.
+    ///
+    /// Terminais reportam Ctrl/Shift de formas diferentes:
+    /// - `Char('s')` + CONTROL|SHIFT
+    /// - `Char('S')` + CONTROL (sem bit SHIFT)
+    /// - `Char('\u{13}')` (ASCII DC3 = Ctrl+S legado) ± modifiers
     #[must_use]
     pub fn from_event(key: KeyEvent) -> Self {
         let mut ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let mut shift = key.modifiers.contains(KeyModifiers::SHIFT);
+
         let code = match key.code {
-            KeyCode::Char(c) => {
-                let lower = c.to_ascii_lowercase();
-                if c.is_ascii_uppercase() {
-                    shift = true;
-                }
-                KeyCode::Char(lower)
-            }
+            KeyCode::Char(c) => normalize_char_key(c, &mut ctrl, &mut shift),
             other => other,
         };
-        if matches!(code, KeyCode::Char(_)) && !ctrl && !alt {
-            shift = key.modifiers.contains(KeyModifiers::SHIFT);
-        }
-        if matches!(
-            code,
-            KeyCode::Left
-                | KeyCode::Right
-                | KeyCode::Up
-                | KeyCode::Down
-                | KeyCode::Home
-                | KeyCode::End
-                | KeyCode::PageUp
-                | KeyCode::PageDown
-                | KeyCode::F(_)
-        ) {
-            shift = key.modifiers.contains(KeyModifiers::SHIFT);
-            ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        }
-        // Alguns terminais enviam Ctrl+/ como Char('?') ou Char('_') — normaliza common case
-        let code = match (ctrl, code) {
-            (true, KeyCode::Char('?')) => KeyCode::Char('/'),
-            _ => code,
-        };
+
         Self {
             ctrl,
             alt,
@@ -59,7 +38,7 @@ impl KeyChord {
         }
     }
 
-    /// Forma estável minúscula: `ctrl+shift+left`, `esc`, `ctrl+s`.
+    /// Forma estável minúscula: `ctrl+shift+s`, `esc`, `ctrl+s`.
     #[must_use]
     pub fn canonical_string(self) -> String {
         let mut parts: Vec<String> = Vec::new();
@@ -74,6 +53,43 @@ impl KeyChord {
         }
         parts.push(code_token(self.code));
         parts.join("+")
+    }
+}
+
+/// Converte Char do evento em letra canônica + atualiza ctrl/shift.
+fn normalize_char_key(c: char, ctrl: &mut bool, shift: &mut bool) -> KeyCode {
+    // Ctrl+A..Ctrl+Z legados: bytes 1..=26 (sem bit CONTROL em alguns TTYs)
+    if let Some(letter) = control_char_to_letter(c) {
+        *ctrl = true;
+        // Não inventa shift — se o terminal não enviou SHIFT, não há como saber.
+        return KeyCode::Char(letter);
+    }
+
+    if c.is_ascii_alphabetic() {
+        // Ctrl+Shift+S frequentemente chega como 'S' maiúsculo + CONTROL
+        // (sem KeyModifiers::SHIFT). Tratar maiúscula como Shift.
+        if c.is_ascii_uppercase() {
+            *shift = true;
+        }
+        return KeyCode::Char(c.to_ascii_lowercase());
+    }
+
+    // Não-alfabético: se Shift está no modifier e for símbolo, mantém o char.
+    // Para lookup usamos o char como veio (já lower se aplicável).
+    if c.is_ascii() {
+        KeyCode::Char(c.to_ascii_lowercase())
+    } else {
+        KeyCode::Char(c)
+    }
+}
+
+/// `Ctrl+A` = 1 … `Ctrl+Z` = 26 → letra minúscula.
+fn control_char_to_letter(c: char) -> Option<char> {
+    let b = c as u32;
+    if (1..=26).contains(&b) {
+        Some((b'a' + (b as u8 - 1)) as char)
+    } else {
+        None
     }
 }
 
@@ -138,6 +154,7 @@ fn parse_code_token(token: &str) -> Result<KeyCode, ParseChordError> {
         "f2" => KeyCode::F(2),
         "f3" => KeyCode::F(3),
         "f5" => KeyCode::F(5),
+        "f12" => KeyCode::F(12),
         "`" | "grave" | "backtick" => KeyCode::Char('`'),
         "\\" | "backslash" => KeyCode::Char('\\'),
         "/" | "slash" => KeyCode::Char('/'),
@@ -171,6 +188,7 @@ fn code_token(code: KeyCode) -> String {
         KeyCode::F(2) => "f2".into(),
         KeyCode::F(3) => "f3".into(),
         KeyCode::F(5) => "f5".into(),
+        KeyCode::F(12) => "f12".into(),
         KeyCode::Char(' ') => "space".into(),
         KeyCode::Char('`') => "`".into(),
         KeyCode::Char('\\') => "\\".into(),
@@ -184,6 +202,16 @@ fn code_token(code: KeyCode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyEventKind, KeyEventState};
+
+    fn key(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: mods,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
 
     #[test]
     fn parse_ctrl_s() {
@@ -202,9 +230,48 @@ mod tests {
 
     #[test]
     fn roundtrip_defaults() {
-        for s in ["esc", "ctrl+z", "pageup", "shift+home"] {
+        for s in [
+            "esc",
+            "ctrl+z",
+            "pageup",
+            "shift+home",
+            "ctrl+shift+s",
+            "f12",
+        ] {
             let c = parse_chord(s).unwrap();
             assert_eq!(c.canonical_string(), s);
         }
+    }
+
+    #[test]
+    fn ctrl_shift_s_with_shift_modifier() {
+        let c = KeyChord::from_event(key(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ));
+        assert_eq!(c.canonical_string(), "ctrl+shift+s");
+    }
+
+    #[test]
+    fn ctrl_shift_s_as_uppercase_s() {
+        // Terminal envia 'S' + CONTROL sem bit SHIFT
+        let c = KeyChord::from_event(key(KeyCode::Char('S'), KeyModifiers::CONTROL));
+        assert_eq!(c.canonical_string(), "ctrl+shift+s");
+    }
+
+    #[test]
+    fn ctrl_s_legacy_control_char() {
+        // ASCII 0x13 = Ctrl+S
+        let c = KeyChord::from_event(key(KeyCode::Char('\u{13}'), KeyModifiers::empty()));
+        assert!(c.ctrl);
+        assert!(!c.shift);
+        assert_eq!(c.code, KeyCode::Char('s'));
+        assert_eq!(c.canonical_string(), "ctrl+s");
+    }
+
+    #[test]
+    fn ctrl_s_plain_lowercase() {
+        let c = KeyChord::from_event(key(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert_eq!(c.canonical_string(), "ctrl+s");
     }
 }

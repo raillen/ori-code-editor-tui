@@ -42,7 +42,7 @@ cargo build --release
 | `Ctrl+Shift+Home` / `End` | Select to doc start/end |
 | `Ctrl+A` | Select all |
 | `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | **Save as…** (path browser · Enter salva) |
+| `Ctrl+Shift+S` / `F12` / `Alt+Shift+S` | **Save as…** (path browser · Enter salva) |
 | `Ctrl+Alt+S` | **Save all** |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |

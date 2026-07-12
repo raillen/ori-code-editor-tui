@@ -170,7 +170,10 @@ fn merge_theme_ui(dst: &mut ThemeUiConfig, src: ThemeUiConfigPartial) {
 pub fn default_key_bindings() -> BTreeMap<String, String> {
     let pairs = [
         ("ctrl+s", "save"),
+        // Save as: vários chords — Ctrl+Shift+S some em muitos terminais
         ("ctrl+shift+s", "save_as"),
+        ("f12", "save_as"),
+        ("alt+shift+s", "save_as"),
         ("ctrl+alt+s", "save_all"),
         ("ctrl+q", "quit"),
         ("esc", "quit"),

@@ -369,6 +369,35 @@ impl App {
         }
     }
 
+    /// Abre o browser “salvar como” (path + nome do arquivo).
+    fn open_save_as_browser(&mut self) {
+        let (start_dir, name) = self
+            .store
+            .active()
+            .ok()
+            .and_then(|d| d.path().map(|p| p.to_path_buf()))
+            .map(|p| {
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "untitled.txt".into());
+                let dir = p
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| self.workspace.clone());
+                (dir, name)
+            })
+            .unwrap_or_else(|| (self.workspace.clone(), "untitled.txt".into()));
+        // canonicalize pode falhar se o dir ainda não existe — PathBrowser já trata
+        let mut browser = PathBrowser::new(&start_dir, BrowseMode::SaveAs);
+        browser.filter = name;
+        self.set_status(format!(
+            "{} · (atalhos: Ctrl+Shift+S · F12 · Alt+Shift+S)",
+            browser.hint()
+        ));
+        self.overlay = Overlay::Browse(browser);
+    }
+
     fn apply_browse_action(&mut self, action: BrowseAction) {
         match action {
             BrowseAction::Stay => {}
@@ -904,6 +933,16 @@ impl App {
                 }
             }
             Action::Save => {
+                // Sem path → Save As (evita “no path” silencioso / modal que não abre)
+                let needs_path = self
+                    .store
+                    .active()
+                    .map(|d| d.path().is_none())
+                    .unwrap_or(true);
+                if needs_path {
+                    self.open_save_as_browser();
+                    return Ok(());
+                }
                 let doc = self.store.active_mut()?;
                 match doc.save_to(None) {
                     Ok(()) => {
@@ -912,33 +951,13 @@ impl App {
                         self.refresh_git_and_index();
                     }
                     Err(DocumentError::Io(e)) if e.kind() == std::io::ErrorKind::InvalidInput => {
-                        self.set_status("no path — open a file to save");
+                        self.open_save_as_browser();
                     }
                     Err(e) => return Err(e),
                 }
             }
             Action::SaveAs => {
-                let (start_dir, name) = self
-                    .store
-                    .active()
-                    .ok()
-                    .and_then(|d| d.path().map(|p| p.to_path_buf()))
-                    .map(|p| {
-                        let name = p
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "untitled.txt".into());
-                        let dir = p
-                            .parent()
-                            .map(Path::to_path_buf)
-                            .unwrap_or_else(|| self.workspace.clone());
-                        (dir, name)
-                    })
-                    .unwrap_or_else(|| (self.workspace.clone(), "untitled.txt".into()));
-                let mut browser = PathBrowser::new(start_dir, BrowseMode::SaveAs);
-                browser.filter = name;
-                self.set_status(browser.hint());
-                self.overlay = Overlay::Browse(browser);
+                self.open_save_as_browser();
             }
             Action::SaveAll => {
                 let (n, skip) = self.store.save_all();
@@ -1672,7 +1691,7 @@ fn build_default_keymap() -> Keymap {
 }
 
 const HELP_LINES: &[&str] = &[
-    "Ctrl+S save · Ctrl+Shift+S save as · Ctrl+Alt+S save all",
+    "Ctrl+S save · Ctrl+Shift+S / F12 / Alt+Shift+S save as · Ctrl+Alt+S save all",
     "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut · Ctrl+A select all",
     "Shift+setas/Home/End seleciona · Ctrl+Shift+Home/End até início/fim",
     "Ctrl+F find (barra) · F3 next · Ctrl+H replace · Alt+C case · Alt+A acentos",
@@ -1739,10 +1758,8 @@ mod tests {
         assert_eq!(doc.buffer().as_string(), "hi");
         assert!(doc.is_dirty());
         app.apply(KeyCommand::Action(Action::Save));
-        assert!(app
-            .status_message
-            .as_deref()
-            .is_some_and(|m| m.contains("no path")));
+        // untitled → Save As browser (em vez de erro “no path”)
+        assert!(matches!(app.overlay, Overlay::Browse(_)));
     }
 
     #[test]
@@ -1885,6 +1902,18 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
+        let save_as_upper = KeyEvent {
+            code: KeyCode::Char('S'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let save_as_f12 = KeyEvent {
+            code: KeyCode::F(12),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
         let save_all = KeyEvent {
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL | KeyModifiers::ALT,
@@ -1893,6 +1922,14 @@ mod tests {
         };
         assert_eq!(
             app.map_key(save_as),
+            Some(KeyCommand::Action(Action::SaveAs))
+        );
+        assert_eq!(
+            app.map_key(save_as_upper),
+            Some(KeyCommand::Action(Action::SaveAs))
+        );
+        assert_eq!(
+            app.map_key(save_as_f12),
             Some(KeyCommand::Action(Action::SaveAs))
         );
         assert_eq!(
@@ -1910,6 +1947,35 @@ mod tests {
             assert_eq!(b.mode, BrowseMode::SaveAs);
             assert!(!b.filter.is_empty());
         }
+    }
+
+    #[test]
+    fn save_without_path_opens_save_as() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::InsertChar('x'));
+        app.apply(KeyCommand::Action(Action::Save));
+        assert!(
+            matches!(app.overlay, Overlay::Browse(_)),
+            "Ctrl+S em untitled deve abrir Save As"
+        );
+        if let Overlay::Browse(b) = &app.overlay {
+            assert_eq!(b.mode, BrowseMode::SaveAs);
+        }
+    }
+
+    #[test]
+    fn handle_key_ctrl_shift_s_opens_browser() {
+        let mut app = App::new_empty();
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert!(
+            matches!(app.overlay, Overlay::Browse(_)),
+            "handle_key Ctrl+Shift+S deve abrir browser"
+        );
     }
 
     #[test]

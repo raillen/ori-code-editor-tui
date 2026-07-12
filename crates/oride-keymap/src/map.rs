@@ -68,8 +68,34 @@ impl Keymap {
             return Some(ResolvedKey::Action(action));
         }
 
+        // Fallback: alguns terminais mandam Ctrl+Shift+letra sem bit SHIFT,
+        // mas com Char maiúsculo — from_event já cobre. Se ainda falhar e
+        // for ctrl+letra, tenta a variante com shift forçado (ex.: save_as).
+        if chord.ctrl && !chord.shift {
+            if let KeyCode::Char(c) = chord.code {
+                if c.is_ascii_lowercase() {
+                    let with_shift = KeyChord {
+                        ctrl: true,
+                        alt: chord.alt,
+                        shift: true,
+                        code: KeyCode::Char(c),
+                    };
+                    // Só usa se existir binding *específico* com shift
+                    // (não reescreve ctrl+s → save_as a menos que exista
+                    // ctrl+shift+s E o evento original tenha indícios de shift
+                    // — ver `event_suggests_shift`).
+                    if event_suggests_shift(key) {
+                        if let Some(action) = self.resolve_chord(with_shift) {
+                            return Some(ResolvedKey::Action(action));
+                        }
+                    }
+                }
+            }
+        }
+
         // Digitação: sem ctrl/alt
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL)
+            || matches!(key.code, KeyCode::Char(c) if (c as u32) <= 26 && c as u32 >= 1);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         if ctrl || alt {
             return None;
@@ -80,6 +106,14 @@ impl Keymap {
             _ => None,
         }
     }
+}
+
+/// Heurística: o evento parece incluir Shift além do CONTROL.
+fn event_suggests_shift(key: KeyEvent) -> bool {
+    if key.modifiers.contains(KeyModifiers::SHIFT) {
+        return true;
+    }
+    matches!(key.code, KeyCode::Char(c) if c.is_ascii_uppercase())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +143,35 @@ mod tests {
             .resolve_event(key(KeyCode::Char('s'), KeyModifiers::CONTROL))
             .unwrap();
         assert_eq!(r, ResolvedKey::Action(Action::Save));
+    }
+
+    #[test]
+    fn resolves_ctrl_shift_s_save_as() {
+        let map = Keymap::from_string_map([
+            ("ctrl+s", "save"),
+            ("ctrl+shift+s", "save_as"),
+            ("f12", "save_as"),
+        ])
+        .unwrap();
+
+        let r = map
+            .resolve_event(key(
+                KeyCode::Char('s'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ))
+            .unwrap();
+        assert_eq!(r, ResolvedKey::Action(Action::SaveAs));
+
+        // Maiúsculo + Ctrl (sem bit SHIFT) — comum em TTY
+        let r = map
+            .resolve_event(key(KeyCode::Char('S'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(r, ResolvedKey::Action(Action::SaveAs));
+
+        let r = map
+            .resolve_event(key(KeyCode::F(12), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(r, ResolvedKey::Action(Action::SaveAs));
     }
 
     #[test]
