@@ -124,7 +124,10 @@ pub struct App {
     pub show_line_numbers: bool,
     pub keymap: Keymap,
     pub config: Config,
+    /// Altura útil do texto no editor (linhas visuais, sem bordas/tabs).
     last_editor_height: usize,
+    /// Largura útil do texto (sem gutter) — para soft-wrap no scroll.
+    last_editor_text_width: usize,
     pub focus: Focus,
     pub show_tree: bool,
     pub tree: Option<ProjectTree>,
@@ -263,6 +266,7 @@ impl App {
             keymap,
             config: config.clone(),
             last_editor_height: 20,
+            last_editor_text_width: 80,
             focus: Focus::Editor,
             show_tree: true,
             tree,
@@ -2630,11 +2634,40 @@ impl App {
             return;
         };
         let height = self.last_editor_height.max(1);
+        let text_width = self.last_editor_text_width.max(1);
+        let soft = self.soft_wrap;
+
+        // Acima do viewport → sobe
         if caret.line < self.scroll_y {
             self.scroll_y = caret.line;
-        } else if caret.line >= self.scroll_y + height {
-            self.scroll_y = caret.line + 1 - height;
+            self.split.sync_scroll(self.scroll_y);
+            return;
         }
+
+        // Linha visual do caret relativa ao topo (scroll_y)
+        let caret_visual = visual_row_of_caret(
+            doc.buffer(),
+            self.scroll_y,
+            caret.line,
+            caret.column,
+            text_width,
+            soft,
+        );
+
+        if caret_visual < height {
+            return; // ainda visível
+        }
+
+        // Coloca o caret na última linha visual do viewport
+        self.scroll_y = scroll_origin_for_caret(
+            doc.buffer(),
+            caret.line,
+            caret.column,
+            height,
+            text_width,
+            soft,
+        );
+        self.split.sync_scroll(self.scroll_y);
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
@@ -3003,9 +3036,17 @@ impl App {
             vec![editor_zone]
         };
 
-        // altura do pane focado para page up/down
+        // Viewport real do texto (desconta borda do split + gutter)
         if let Some(a) = pane_areas.get(self.split.focused) {
-            self.last_editor_height = a.height as usize;
+            let border: u16 = if self.split.is_split() { 2 } else { 0 };
+            let gutter = if self.show_line_numbers {
+                self.theme.gutter_width.min(a.width.saturating_sub(border))
+            } else {
+                0
+            };
+            self.last_editor_height = a.height.saturating_sub(border).max(1) as usize;
+            self.last_editor_text_width =
+                a.width.saturating_sub(border).saturating_sub(gutter).max(1) as usize;
         }
         self.ensure_cursor_visible();
         self.split.sync_scroll(self.scroll_y);
@@ -3493,6 +3534,82 @@ impl PluginCtx for HostCtx {
     fn active_is_dirty(&self) -> bool {
         self.dirty
     }
+}
+
+/// Quantas linhas **visuais** uma linha lógica ocupa.
+fn line_visual_height(content: &str, text_width: usize) -> usize {
+    let w = text_width.max(1);
+    let n = content.chars().count();
+    if n == 0 {
+        return 1;
+    }
+    n.div_ceil(w)
+}
+
+/// Índice da linha visual do caret, contado a partir de `scroll_y` (= 0 no topo).
+fn visual_row_of_caret(
+    buffer: &oride_core::Buffer,
+    scroll_y: usize,
+    caret_line: usize,
+    caret_col: usize,
+    text_width: usize,
+    soft_wrap: bool,
+) -> usize {
+    if caret_line < scroll_y {
+        return 0;
+    }
+    if !soft_wrap {
+        return caret_line - scroll_y;
+    }
+    let w = text_width.max(1);
+    let mut rows = 0usize;
+    for ln in scroll_y..caret_line {
+        let t = buffer.line_text(ln).unwrap_or_default();
+        // line_text pode incluir `\n` no fim — remove para medir wrap
+        let t = t.trim_end_matches(['\n', '\r']);
+        rows = rows.saturating_add(line_visual_height(t, w));
+    }
+    rows.saturating_add(caret_col / w)
+}
+
+/// Calcula `scroll_y` (primeira linha lógica) para manter o caret na última
+/// linha visual do viewport.
+fn scroll_origin_for_caret(
+    buffer: &oride_core::Buffer,
+    caret_line: usize,
+    caret_col: usize,
+    viewport_rows: usize,
+    text_width: usize,
+    soft_wrap: bool,
+) -> usize {
+    let height = viewport_rows.max(1);
+    if !soft_wrap {
+        return caret_line.saturating_add(1).saturating_sub(height);
+    }
+    let w = text_width.max(1);
+    // Queremos que a linha visual do caret fique no índice `height - 1`.
+    // Acumulamos linhas lógicas de trás para frente.
+    let mut remaining = height.saturating_sub(1);
+    // linhas visuais acima do caret na mesma linha lógica
+    let on_line_above = caret_col / w;
+    if on_line_above >= remaining {
+        return caret_line;
+    }
+    remaining -= on_line_above;
+    let mut start = caret_line;
+    while start > 0 && remaining > 0 {
+        start -= 1;
+        let t = buffer.line_text(start).unwrap_or_default();
+        let t = t.trim_end_matches(['\n', '\r']);
+        let h = line_visual_height(t, w);
+        if h > remaining {
+            // linha anterior não cabe inteira → começa depois dela
+            start += 1;
+            break;
+        }
+        remaining -= h;
+    }
+    start
 }
 
 fn build_default_keymap() -> Keymap {
@@ -4103,5 +4220,83 @@ mod tests {
             app.map_key(pick),
             Some(KeyCommand::Action(Action::BufferPicker))
         );
+    }
+
+    #[test]
+    fn scroll_follows_cursor_down() {
+        let mut app = App::new_empty();
+        app.last_editor_height = 5;
+        app.last_editor_text_width = 40;
+        app.soft_wrap = false;
+        // 20 linhas
+        for i in 0..20 {
+            if i > 0 {
+                app.apply(KeyCommand::Action(Action::InsertNewline));
+            }
+            app.apply(KeyCommand::InsertChar('x'));
+        }
+        // caret no fim; com height 5 deve scrollar
+        app.ensure_cursor_visible();
+        let caret = app.store.active().unwrap().caret().unwrap();
+        assert!(
+            caret.line >= app.scroll_y,
+            "caret.line={} scroll={}",
+            caret.line,
+            app.scroll_y
+        );
+        assert!(
+            caret.line < app.scroll_y + app.last_editor_height,
+            "caret saiu da tela: line={} scroll={} height={}",
+            caret.line,
+            app.scroll_y,
+            app.last_editor_height
+        );
+        // sobe para o topo
+        app.apply(KeyCommand::Action(Action::MoveDocStart { extend: false }));
+        app.ensure_cursor_visible();
+        assert_eq!(app.scroll_y, 0);
+    }
+
+    #[test]
+    fn scroll_follows_cursor_with_soft_wrap() {
+        let mut app = App::new_empty();
+        app.last_editor_height = 4;
+        app.last_editor_text_width = 10;
+        app.soft_wrap = true;
+        // uma linha longa (3 rows visuais) + várias curtas
+        let long = "abcdefghij".repeat(3); // 30 chars → 3 visual rows
+        for c in long.chars() {
+            app.apply(KeyCommand::InsertChar(c));
+        }
+        app.apply(KeyCommand::Action(Action::InsertNewline));
+        for _ in 0..10 {
+            app.apply(KeyCommand::InsertChar('z'));
+            app.apply(KeyCommand::Action(Action::InsertNewline));
+        }
+        app.ensure_cursor_visible();
+        let caret = app.store.active().unwrap().caret().unwrap();
+        let visual = visual_row_of_caret(
+            app.store.active().unwrap().buffer(),
+            app.scroll_y,
+            caret.line,
+            caret.column,
+            app.last_editor_text_width,
+            true,
+        );
+        assert!(
+            visual < app.last_editor_height,
+            "soft-wrap: caret visual={visual} height={} scroll={}",
+            app.last_editor_height,
+            app.scroll_y
+        );
+    }
+
+    #[test]
+    fn scroll_origin_helpers() {
+        let buf = oride_core::Buffer::from_text("aa\nbb\ncc\ndd\nee\n");
+        assert_eq!(line_visual_height("hello", 10), 1);
+        assert_eq!(line_visual_height("hello world!!", 5), 3);
+        let origin = scroll_origin_for_caret(&buf, 4, 0, 3, 40, false);
+        assert_eq!(origin, 2); // lines 2,3,4 visible
     }
 }

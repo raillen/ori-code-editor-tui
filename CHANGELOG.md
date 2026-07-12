@@ -11,6 +11,7 @@
 ### Fixed
 
 - **Preview Markdown** segue o scroll do editor (não fica preso no topo); `Alt+↑/↓` só faz ajuste fino
+- **Scroll do editor** acompanha o cursor de novo (viewport real + soft-wrap); cursor não some abaixo/acima da tela
 
 ### Added (UX polish — tiers S+A)
 

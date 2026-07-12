@@ -141,6 +141,7 @@ impl FindState {
 
     /// Snapshot compacto das flags (testes / debug).
     #[must_use]
+    #[cfg(test)]
     pub fn options_label(&self) -> String {
         format!(
             "[{}]case [{}]accent [{}]word [{}]re",
