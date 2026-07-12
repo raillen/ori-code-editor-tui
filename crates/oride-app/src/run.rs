@@ -32,6 +32,10 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     app.handle_key(key);
                 }
+                Event::Mouse(me) => {
+                    // Ignore move without button unless dragging (handled inside)
+                    app.handle_mouse(me);
+                }
                 Event::Resize(_, _) => {
                     app.ensure_cursor_visible();
                 }

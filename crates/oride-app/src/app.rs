@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use oride_config::{resolve_indent_for_file, Config, EditorIndent};
 use oride_core::{DocumentError, DocumentId, DocumentStore};
 use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
@@ -32,6 +32,10 @@ use crate::disk_watch::DiskWatch;
 use crate::find::FindState;
 use crate::jump_list::{Jump, JumpList};
 use crate::menus::default_menus;
+use crate::mouse::{
+    list_row_at, menu_index_at, screen_to_caret, tab_index_at, tree_row_at, word_bounds,
+    HitRegions, HitTarget,
+};
 use crate::session::Session;
 use crate::split::{SplitOrientation, SplitState};
 
@@ -104,6 +108,17 @@ enum Overlay {
         lines: Vec<String>,
         scroll: usize,
     },
+    /// Surround: aguarda par ( [ { " ' `
+    SurroundPick,
+    /// Telescope-lite: files + buffers + commands
+    MultiPicker {
+        query: String,
+        selected: usize,
+    },
+    /// Histórico de undo
+    UndoTree {
+        selected: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +180,18 @@ pub struct App {
     show_welcome: bool,
     jump_list: JumpList,
     menus: Vec<oride_ui::MenuColumn>,
+    /// Último layout para hit-test do mouse.
+    hit_regions: HitRegions,
+    mouse_enabled: bool,
+    /// Âncora de drag (byte) enquanto botão esquerdo pressionado.
+    mouse_drag_anchor: Option<oride_core::ByteOffset>,
+    last_click: Option<(Instant, u16, u16)>,
+    click_count: u8,
+    /// Macro: gravando?
+    macro_recording: bool,
+    macro_buffer: Vec<KeyEvent>,
+    /// Aguarda tecla de par para surround.
+    surround_pending: bool,
 }
 
 impl App {
@@ -302,6 +329,14 @@ impl App {
             show_welcome: false,
             jump_list: JumpList::default(),
             menus: default_menus(),
+            hit_regions: HitRegions::default(),
+            mouse_enabled: config.mouse,
+            mouse_drag_anchor: None,
+            last_click: None,
+            click_count: 0,
+            macro_recording: false,
+            macro_buffer: Vec::new(),
+            surround_pending: false,
         }
     }
 
@@ -490,6 +525,21 @@ impl App {
 
     /// Entrada principal de teclado (overlays / focus / keymap).
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Surround: próximo char é o delimitador
+        if self.surround_pending {
+            self.surround_pending = false;
+            self.overlay = Overlay::None;
+            if let KeyCode::Char(c) = key.code {
+                self.apply_surround(c);
+            } else if key.code != KeyCode::Esc {
+                self.set_status("surround cancelado");
+            }
+            return;
+        }
+        // Gravação de macro (não grava o próprio toggle)
+        if self.macro_recording {
+            self.macro_buffer.push(key);
+        }
         // Welcome / which-key / menu têm prioridade sobre o resto
         if self.show_welcome {
             self.handle_welcome_key(key);
@@ -612,6 +662,18 @@ impl App {
             }
             Overlay::Diff { .. } => {
                 self.handle_diff_key(key);
+                true
+            }
+            Overlay::SurroundPick => {
+                // tratado no início de handle_key via surround_pending
+                true
+            }
+            Overlay::MultiPicker { .. } => {
+                self.handle_multi_picker_key(key);
+                true
+            }
+            Overlay::UndoTree { .. } => {
+                self.handle_undo_tree_key(key);
                 true
             }
             Overlay::ReloadConfirm { path } => {
@@ -1885,6 +1947,68 @@ impl App {
             Action::ShowDiff => {
                 self.open_diff_for_active();
             }
+            Action::Surround => {
+                if self
+                    .store
+                    .active()
+                    .map(|d| d.selection().is_empty())
+                    .unwrap_or(true)
+                {
+                    self.set_status("surround: selecione texto primeiro");
+                } else {
+                    self.surround_pending = true;
+                    self.overlay = Overlay::SurroundPick;
+                    self.set_status(
+                        "surround: digite o par ( [ { < ou aspas/backtick · Esc cancela",
+                    );
+                }
+            }
+            Action::MacroToggleRecord => {
+                if self.macro_recording {
+                    // remove a tecla F9 que acabou de ser empilhada no início de handle_key
+                    self.macro_buffer.pop();
+                    self.macro_recording = false;
+                    let n = self.macro_buffer.len();
+                    self.set_status(format!("macro: parou · {n} teclas · F10 play"));
+                } else {
+                    self.macro_buffer.clear();
+                    self.macro_recording = true;
+                    // não gravar o próprio F9 de início
+                    self.macro_buffer.pop();
+                    self.set_status("macro: GRAVANDO · F9 para parar");
+                }
+            }
+            Action::MacroPlay => {
+                if self.macro_buffer.is_empty() {
+                    self.set_status("macro: vazia · F9 grava");
+                } else {
+                    let keys = self.macro_buffer.clone();
+                    let was = self.macro_recording;
+                    self.macro_recording = false;
+                    for k in keys {
+                        self.handle_key(k);
+                    }
+                    self.macro_recording = was;
+                    self.set_status("macro: reproduzida");
+                }
+            }
+            Action::MultiPicker => {
+                self.overlay = Overlay::MultiPicker {
+                    query: String::new(),
+                    selected: 0,
+                };
+            }
+            Action::UndoTree => {
+                self.overlay = Overlay::UndoTree { selected: 0 };
+            }
+            Action::ToggleMouse => {
+                self.mouse_enabled = !self.mouse_enabled;
+                self.set_status(if self.mouse_enabled {
+                    "mouse: on"
+                } else {
+                    "mouse: off"
+                });
+            }
             Action::OpenFolder => {
                 let browser = PathBrowser::new(&self.workspace, BrowseMode::Folder);
                 self.set_status(browser.hint());
@@ -2626,6 +2750,432 @@ impl App {
         }
     }
 
+    /// Eventos de mouse (clique, drag, scroll, foco de painéis).
+    pub fn handle_mouse(&mut self, ev: MouseEvent) {
+        if !self.mouse_enabled {
+            return;
+        }
+        // overlays: scroll na lista se for picker
+        if !matches!(self.overlay, Overlay::None) {
+            match ev.kind {
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                    // reusa setas via fake? ignora por simplicidade
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if matches!(self.overlay, Overlay::Hover { .. } | Overlay::SurroundPick) {
+                        self.overlay = Overlay::None;
+                        self.surround_pending = false;
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.show_which_key || self.show_welcome {
+            if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+                self.show_which_key = false;
+                self.show_welcome = false;
+            }
+            return;
+        }
+        if self.menu_open.is_some() {
+            self.handle_mouse_menu(ev);
+            return;
+        }
+
+        let x = ev.column;
+        let y = ev.row;
+        let target = self.hit_regions.at(x, y);
+
+        match ev.kind {
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                let up = matches!(ev.kind, MouseEventKind::ScrollUp);
+                match target {
+                    HitTarget::Editor => {
+                        let delta = if up { 3usize } else { 0 };
+                        let down = if up { 0 } else { 3usize };
+                        if up {
+                            self.scroll_y = self.scroll_y.saturating_sub(3);
+                        } else {
+                            self.scroll_y = self.scroll_y.saturating_add(3);
+                        }
+                        self.split.sync_scroll(self.scroll_y);
+                        let _ = (delta, down);
+                    }
+                    HitTarget::Tree => {
+                        if let Some(tree) = self.tree.as_mut() {
+                            if up {
+                                tree.move_selection(-3);
+                            } else {
+                                tree.move_selection(3);
+                            }
+                            self.ensure_tree_visible();
+                        }
+                    }
+                    HitTarget::Scm => {
+                        if up {
+                            self.scm_selected = self.scm_selected.saturating_sub(1);
+                        } else if !self.scm_cache.is_empty() {
+                            self.scm_selected =
+                                (self.scm_selected + 1).min(self.scm_cache.len() - 1);
+                        }
+                    }
+                    HitTarget::Terminal => {
+                        // scrollback do PTY é “follow end”; só foca
+                        self.focus = Focus::Terminal;
+                    }
+                    _ => {}
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let now = Instant::now();
+                let multi = if let Some((t, lx, ly)) = self.last_click {
+                    t.elapsed().as_millis() < 400 && lx == x && ly == y
+                } else {
+                    false
+                };
+                if multi {
+                    self.click_count = self.click_count.saturating_add(1).min(3);
+                } else {
+                    self.click_count = 1;
+                }
+                self.last_click = Some((now, x, y));
+                self.mouse_down_at(target, x, y, self.click_count);
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if target == HitTarget::Editor || self.mouse_drag_anchor.is_some() {
+                    self.mouse_drag_to(x, y);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.mouse_drag_anchor = None;
+            }
+            MouseEventKind::Down(MouseButton::Right) => {
+                // botão direito: which-key / menu contextual simples
+                self.show_which_key = true;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_mouse_menu(&mut self, ev: MouseEvent) {
+        if !matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+            return;
+        }
+        let titles: Vec<&str> = self.menus.iter().map(|m| m.title.as_str()).collect();
+        if let Some(i) = menu_index_at(&titles, self.hit_regions.menu, ev.column) {
+            self.menu_open = Some((i, 0));
+            return;
+        }
+        // clique em item do dropdown: y relativo
+        if let Some((mi, _)) = self.menu_open {
+            if let Some(menu) = self.menus.get(mi) {
+                let y0 = self.hit_regions.menu.y.saturating_add(1);
+                if ev.row > y0 {
+                    let idx = (ev.row - y0 - 1) as usize;
+                    if idx < menu.items.len() {
+                        let id = menu.items[idx].action_id.clone();
+                        self.menu_open = None;
+                        self.apply_action_id(&id);
+                        return;
+                    }
+                }
+            }
+        }
+        self.menu_open = None;
+    }
+
+    fn mouse_down_at(&mut self, target: HitTarget, x: u16, y: u16, clicks: u8) {
+        match target {
+            HitTarget::Menu => {
+                let titles: Vec<&str> = self.menus.iter().map(|m| m.title.as_str()).collect();
+                if let Some(i) = menu_index_at(&titles, self.hit_regions.menu, x) {
+                    self.menu_open = Some((i, 0));
+                }
+            }
+            HitTarget::Tree => {
+                self.focus = Focus::Tree;
+                self.show_tree = true;
+                if let (Some(area), Some(tree)) = (self.hit_regions.tree, self.tree.as_mut()) {
+                    if let Some(row) = tree_row_at(area, self.tree_scroll, y) {
+                        tree.set_selected(row);
+                        if clicks >= 2 {
+                            match tree.activate_selected() {
+                                Ok(Some(path)) => {
+                                    let _ = self.store.open_path(&path);
+                                    self.focus = Focus::Editor;
+                                    self.scroll_y = 0;
+                                    if let Some(id) = self.store.active_id() {
+                                        self.split.set_focused_doc(id);
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(e) => self.set_status(format!("tree: {e}")),
+                            }
+                        }
+                    }
+                }
+            }
+            HitTarget::Tabs => {
+                if let Some(area) = self.hit_regions.tabs {
+                    let n = self.store.tab_summaries().len();
+                    if let Some(i) = tab_index_at(area, n, x) {
+                        let id = self.store.tab_summaries().get(i).map(|t| t.id);
+                        if let Some(id) = id {
+                            let _ = self.store.set_active(id);
+                            self.split.set_focused_doc(id);
+                            self.scroll_y = 0;
+                            self.focus = Focus::Editor;
+                        }
+                    }
+                }
+            }
+            HitTarget::Editor => {
+                self.focus = Focus::Editor;
+                self.place_caret_from_mouse(x, y, clicks);
+            }
+            HitTarget::Scm => {
+                self.show_scm = true;
+                self.focus = Focus::Scm;
+                if let Some(area) = self.hit_regions.scm {
+                    // scm list starts at 0 scroll internally by selection
+                    if let Some(row) = list_row_at(area, 0, y) {
+                        if row < self.scm_cache.len() {
+                            self.scm_selected = row;
+                        }
+                        if clicks >= 2 {
+                            // open
+                            if let Some((_, p)) = self.scm_cache.get(self.scm_selected).cloned() {
+                                let path = self.workspace.join(p);
+                                let _ = self.store.open_path(&path);
+                                self.focus = Focus::Editor;
+                            }
+                        }
+                    }
+                }
+            }
+            HitTarget::Terminal => {
+                self.ensure_terminal();
+                if let Some(t) = self.terminal.as_mut() {
+                    t.visible = true;
+                }
+                self.focus = Focus::Terminal;
+            }
+            HitTarget::Outside => {}
+        }
+    }
+
+    fn place_caret_from_mouse(&mut self, x: u16, y: u16, clicks: u8) {
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let Some(caret) = screen_to_caret(doc.buffer(), &self.hit_regions, x, y) else {
+            return;
+        };
+        let Ok(byte) = doc.buffer().caret_to_byte(caret) else {
+            return;
+        };
+        let _ = doc;
+        if clicks >= 3 {
+            // linha inteira
+            if let Ok(doc) = self.store.active_mut() {
+                let line = caret.line;
+                let start = doc.buffer().line_to_byte(line).unwrap_or(byte);
+                let end = if line + 1 < doc.buffer().line_count() {
+                    doc.buffer()
+                        .line_to_byte(line + 1)
+                        .unwrap_or(oride_core::ByteOffset::new(doc.buffer().len_bytes()))
+                } else {
+                    oride_core::ByteOffset::new(doc.buffer().len_bytes())
+                };
+                doc.select_byte_range(start, end);
+            }
+            self.mouse_drag_anchor = None;
+        } else if clicks == 2 {
+            if let Ok(doc) = self.store.active_mut() {
+                let (s, e) = word_bounds(doc.buffer(), byte);
+                doc.select_byte_range(s, e);
+                self.mouse_drag_anchor = Some(s);
+            }
+        } else {
+            if let Ok(doc) = self.store.active_mut() {
+                doc.jump_to_byte(byte);
+            }
+            self.mouse_drag_anchor = Some(byte);
+        }
+        self.ensure_cursor_visible();
+    }
+
+    fn mouse_drag_to(&mut self, x: u16, y: u16) {
+        let Some(anchor) = self.mouse_drag_anchor else {
+            return;
+        };
+        let Ok(doc) = self.store.active() else {
+            return;
+        };
+        let Some(caret) = screen_to_caret(doc.buffer(), &self.hit_regions, x, y) else {
+            return;
+        };
+        let Ok(head) = doc.buffer().caret_to_byte(caret) else {
+            return;
+        };
+        let _ = doc;
+        if let Ok(doc) = self.store.active_mut() {
+            doc.select_byte_range(anchor, head);
+        }
+        self.ensure_cursor_visible();
+    }
+
+    fn apply_surround(&mut self, open: char) {
+        let close = match open {
+            '(' => ')',
+            '[' => ']',
+            '{' => '}',
+            '<' => '>',
+            '"' => '"',
+            '\'' => '\'',
+            '`' => '`',
+            _ => open,
+        };
+        let Ok(doc) = self.store.active_mut() else {
+            return;
+        };
+        if doc.selection().is_empty() {
+            self.set_status("surround: sem seleção");
+            return;
+        }
+        let selected = doc.selected_text();
+        let wrapped = format!("{open}{selected}{close}");
+        let _ = doc.delete_selection();
+        let _ = doc.insert_text(&wrapped);
+        self.set_status(format!("surround: {open}…{close}"));
+    }
+
+    fn handle_multi_picker_key(&mut self, key: KeyEvent) {
+        let Overlay::MultiPicker { query, selected } = &self.overlay else {
+            return;
+        };
+        let mut query = query.clone();
+        let mut selected = *selected;
+        let items = self.multi_picker_items(&query);
+        match key.code {
+            KeyCode::Esc => self.overlay = Overlay::None,
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if !items.is_empty() => {
+                selected = (selected + 1).min(items.len() - 1);
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                selected = 0;
+            }
+            KeyCode::Char(c) if !c.is_control() => {
+                query.push(c);
+                selected = 0;
+            }
+            KeyCode::Enter => {
+                if let Some(item) = items.get(selected).cloned() {
+                    self.overlay = Overlay::None;
+                    self.run_multi_picker_item(&item);
+                    return;
+                }
+            }
+            _ => {}
+        }
+        if !matches!(self.overlay, Overlay::None) {
+            self.overlay = Overlay::MultiPicker { query, selected };
+        }
+    }
+
+    fn multi_picker_items(&self, query: &str) -> Vec<String> {
+        let q = query.to_lowercase();
+        let mut out = Vec::new();
+        // buffers
+        for tab in self.store.tab_summaries() {
+            let label = format!("buf: {}", tab.title);
+            if q.is_empty() || label.to_lowercase().contains(&q) {
+                out.push(label);
+            }
+        }
+        // commands
+        for a in Action::palette_actions() {
+            let label = format!("cmd: {}", a.palette_label());
+            if q.is_empty() || label.to_lowercase().contains(&q) {
+                out.push(label);
+            }
+        }
+        // files (limit)
+        for p in self.file_index.iter().take(500) {
+            let rel = p.strip_prefix(&self.workspace).unwrap_or(p);
+            let label = format!("file: {}", rel.display());
+            if q.is_empty() || label.to_lowercase().contains(&q) {
+                out.push(label);
+            }
+            if out.len() > 400 {
+                break;
+            }
+        }
+        out
+    }
+
+    fn run_multi_picker_item(&mut self, item: &str) {
+        if let Some(name) = item.strip_prefix("buf: ") {
+            for tab in self.store.tab_summaries() {
+                if tab.title == name {
+                    let _ = self.store.set_active(tab.id);
+                    self.split.set_focused_doc(tab.id);
+                    self.focus = Focus::Editor;
+                    return;
+                }
+            }
+        } else if let Some(label) = item.strip_prefix("cmd: ") {
+            if let Some(action) = Action::palette_actions()
+                .iter()
+                .find(|a| a.palette_label() == label)
+                .copied()
+            {
+                let _ = self.apply_action(action);
+            }
+        } else if let Some(rel) = item.strip_prefix("file: ") {
+            let path = self.workspace.join(rel);
+            let _ = self.store.open_path(&path);
+            self.focus = Focus::Editor;
+            self.scroll_y = 0;
+        }
+    }
+
+    fn handle_undo_tree_key(&mut self, key: KeyEvent) {
+        let Overlay::UndoTree { selected } = &self.overlay else {
+            return;
+        };
+        let mut selected = *selected;
+        let labels = self
+            .store
+            .active()
+            .map(|d| d.undo_history_labels())
+            .unwrap_or_default();
+        let n = labels.len();
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.overlay = Overlay::None,
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if n > 0 => selected = (selected + 1).min(n.saturating_sub(1)),
+            KeyCode::Enter => {
+                // desfaz até o item selecionado (do mais recente)
+                if n > 0 {
+                    let steps = n - 1 - selected;
+                    for _ in 0..=steps {
+                        let _ = self.store.active_mut().map(|d| d.undo());
+                    }
+                    self.set_status(format!("undo ×{}", steps + 1));
+                }
+                self.overlay = Overlay::None;
+            }
+            _ => {}
+        }
+        if matches!(self.overlay, Overlay::UndoTree { .. }) {
+            self.overlay = Overlay::UndoTree { selected };
+        }
+    }
+
     pub fn ensure_cursor_visible(&mut self) {
         let Ok(doc) = self.store.active() else {
             return;
@@ -2701,6 +3251,7 @@ impl App {
 
         let open_menu = self.menu_open.map(|(i, _)| i);
         render_menu_bar(frame, menu_area, &self.menus, open_menu);
+        self.hit_regions.menu = menu_area;
 
         let banner_hint = match self.focus {
             Focus::Editor => "F1 help · Ctrl+Shift+P cmds · Alt+F menu",
@@ -2731,14 +3282,21 @@ impl App {
             .split(body);
 
         if tree_w > 0 {
+            self.hit_regions.tree = Some(body_chunks[0]);
             self.draw_tree(frame, body_chunks[0]);
+        } else {
+            self.hit_regions.tree = None;
         }
         self.draw_editor_column(frame, body_chunks[1]);
         if scm_w > 0 {
+            self.hit_regions.scm = Some(body_chunks[2]);
             self.draw_scm(frame, body_chunks[2]);
+        } else {
+            self.hit_regions.scm = None;
         }
 
         if term_h > 0 {
+            self.hit_regions.terminal = Some(term_area);
             if let Some(term) = self.terminal.as_mut() {
                 term.poll_output();
                 let cols = term_area.width.max(20);
@@ -2755,6 +3313,8 @@ impl App {
                     err.as_deref(),
                 );
             }
+        } else {
+            self.hit_regions.terminal = None;
         }
 
         self.draw_status(frame, status_area);
@@ -2950,6 +3510,45 @@ impl App {
                 };
                 render_palette(frame, area, &view, &self.theme);
             }
+            Overlay::SurroundPick => {
+                let lines = vec![
+                    "Selecione o delimitador:".into(),
+                    "  (  [  {  <  \"  '  `".into(),
+                    "Esc cancela".into(),
+                ];
+                let view = MiniModalView {
+                    title: "Surround",
+                    lines: &lines,
+                    selected: 0,
+                };
+                render_mini_modal(frame, area, &view, &self.theme);
+            }
+            Overlay::MultiPicker { query, selected } => {
+                let items = self.multi_picker_items(query);
+                let view = PaletteView {
+                    title: "multi-picker · buf | cmd | file",
+                    query,
+                    items: &items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter · digite filtra · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
+            Overlay::UndoTree { selected } => {
+                let items = self
+                    .store
+                    .active()
+                    .map(|d| d.undo_history_labels())
+                    .unwrap_or_default();
+                let view = PaletteView {
+                    title: "undo history · Enter desfaz até o item",
+                    query: "",
+                    items: &items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
         }
 
         if self.show_which_key {
@@ -2999,6 +3598,7 @@ impl App {
             .split(area);
 
         let tabs = self.store.tab_summaries();
+        self.hit_regions.tabs = Some(chunks[0]);
         render_tabs(frame, chunks[0], &tabs, &self.theme);
 
         let (lang, source) = match self.store.active() {
@@ -3047,6 +3647,21 @@ impl App {
             self.last_editor_height = a.height.saturating_sub(border).max(1) as usize;
             self.last_editor_text_width =
                 a.width.saturating_sub(border).saturating_sub(gutter).max(1) as usize;
+            let ed = if self.split.is_split() {
+                Rect {
+                    x: a.x.saturating_add(1),
+                    y: a.y.saturating_add(1),
+                    width: a.width.saturating_sub(2),
+                    height: a.height.saturating_sub(2),
+                }
+            } else {
+                *a
+            };
+            self.hit_regions.editor = Some(ed);
+            self.hit_regions.gutter = gutter;
+            self.hit_regions.text_width = self.last_editor_text_width as u16;
+            self.hit_regions.soft_wrap = self.soft_wrap;
+            self.hit_regions.scroll_y = self.scroll_y;
         }
         self.ensure_cursor_visible();
         self.split.sync_scroll(self.scroll_y);

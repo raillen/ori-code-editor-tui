@@ -443,6 +443,17 @@ impl Document {
         changed
     }
 
+    /// Resumos do histórico de undo (UI tier B).
+    #[must_use]
+    pub fn undo_history_labels(&self) -> Vec<String> {
+        self.undo.undo_summaries()
+    }
+
+    #[must_use]
+    pub fn redo_history_labels(&self) -> Vec<String> {
+        self.undo.redo_summaries()
+    }
+
     pub fn redo(&mut self) -> bool {
         let changed = self.redo_inner();
         if changed {

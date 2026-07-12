@@ -87,7 +87,16 @@ cargo build --release
 **Terminal:** shell interativo com foco no painel · `Ctrl+C` vai pro shell · `Esc` → editor · `Ctrl+"` fecha.  
 **SCM:** lista working tree dirty (não é 2ª project tree).  
 **Icons:** Nerd Font glyphs (ASCII fallback exists in code).  
-**Mouse:** planejado (futuro) — ver `docs/planning/ux-polish-plan.md`.
+**Mouse (default on):** clique = caret · drag = seleção · duplo = palavra · scroll por painel · botão direito = which-key. Desligar: `mouse = false` no TOML.
+
+### Tier B (MVP)
+
+| Key | Action |
+|-----|--------|
+| `F8` | Surround seleção com par `()[]{}…` |
+| `F9` / `F10` | Macro grava/para · play |
+| `Ctrl+Shift+T` | Multi-picker (buffers + cmds + files) |
+| `Ctrl+Shift+U` | Histórico de undo |
 
 ### Config
 

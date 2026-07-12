@@ -80,6 +80,13 @@ pub enum Action {
     WhichKey,
     Welcome,
     ShowDiff,
+    // Tier B + mouse
+    Surround,
+    MacroToggleRecord,
+    MacroPlay,
+    MultiPicker,
+    UndoTree,
+    ToggleMouse,
 }
 
 impl Action {
@@ -158,6 +165,12 @@ impl Action {
             Self::WhichKey => "Which-key (shortcuts)",
             Self::Welcome => "Essential shortcuts",
             Self::ShowDiff => "Git diff (active file)",
+            Self::Surround => "Surround selection…",
+            Self::MacroToggleRecord => "Macro: record/stop",
+            Self::MacroPlay => "Macro: play",
+            Self::MultiPicker => "Multi picker (files/cmds/buffers)",
+            Self::UndoTree => "Undo history…",
+            Self::ToggleMouse => "Toggle mouse",
         }
     }
 
@@ -219,6 +232,12 @@ impl Action {
             Action::WhichKey,
             Action::Welcome,
             Action::ShowDiff,
+            Action::Surround,
+            Action::MacroToggleRecord,
+            Action::MacroPlay,
+            Action::MultiPicker,
+            Action::UndoTree,
+            Action::ToggleMouse,
             Action::Quit,
         ]
     }
@@ -310,6 +329,12 @@ pub fn parse_action(id: &str) -> Result<Action, ActionParseError> {
         "which_key" => Action::WhichKey,
         "welcome" => Action::Welcome,
         "show_diff" => Action::ShowDiff,
+        "surround" => Action::Surround,
+        "macro_toggle_record" => Action::MacroToggleRecord,
+        "macro_play" => Action::MacroPlay,
+        "multi_picker" => Action::MultiPicker,
+        "undo_tree" => Action::UndoTree,
+        "toggle_mouse" => Action::ToggleMouse,
         other => return Err(ActionParseError(other.to_string())),
     };
     Ok(action)

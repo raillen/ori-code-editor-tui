@@ -12,4 +12,4 @@ pub use buffer::{Buffer, BufferError};
 pub use document::{Document, DocumentError, DocumentId, DocumentStore, TabSummary};
 pub use position::{ByteOffset, Caret};
 pub use selection::Selection;
-pub use undo::{Edit, UndoStack};
+pub use undo::{Edit, EditGroup, UndoStack};

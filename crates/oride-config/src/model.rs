@@ -18,6 +18,8 @@ pub struct Config {
     pub tree: TreeConfig,
     pub terminal: TerminalConfig,
     pub lsp: LspConfig,
+    /// Captura de mouse (clique, drag, scroll).
+    pub mouse: bool,
     /// Chord string → action id (`"ctrl+s" = "save"`).
     pub keys: BTreeMap<String, String>,
 }
@@ -34,6 +36,7 @@ impl Default for Config {
             tree: TreeConfig::default(),
             terminal: TerminalConfig::default(),
             lsp: LspConfig::default(),
+            mouse: true,
             keys: default_key_bindings(),
         }
     }
@@ -276,6 +279,7 @@ pub(crate) struct RawConfigFile {
     theme: Option<String>,
     show_line_numbers: Option<bool>,
     soft_wrap: Option<bool>,
+    mouse: Option<bool>,
     editor: Option<EditorConfigPartial>,
     ui: Option<ThemeUiConfigPartial>,
     syntax: Option<SyntaxPartial>,
@@ -295,6 +299,9 @@ impl Config {
         }
         if let Some(v) = raw.soft_wrap {
             self.soft_wrap = v;
+        }
+        if let Some(v) = raw.mouse {
+            self.mouse = v;
         }
         if let Some(ed) = raw.editor {
             if let Some(v) = ed.tab_size {
@@ -517,6 +524,12 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("alt+/", "which_key"),
         ("alt+shift+/", "welcome"),
         ("f2", "show_diff"),
+        // Tier B
+        ("f8", "surround"),
+        ("f9", "macro_toggle_record"),
+        ("f10", "macro_play"),
+        ("ctrl+shift+t", "multi_picker"),
+        ("ctrl+shift+u", "undo_tree"),
     ];
     pairs
         .into_iter()

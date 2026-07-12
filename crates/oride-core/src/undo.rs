@@ -49,7 +49,7 @@ impl Edit {
 /// Grupo de edits (ex.: uma digitação coalescida ou um paste).
 #[derive(Debug, Clone, Default)]
 pub struct EditGroup {
-    edits: Vec<Edit>,
+    pub(crate) edits: Vec<Edit>,
 }
 
 impl EditGroup {
@@ -65,6 +65,34 @@ impl EditGroup {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.edits.is_empty()
+    }
+
+    /// Rótulo curto para painel de histórico.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match self.edits.first() {
+            None => "(vazio)".into(),
+            Some(Edit::Insert { text, .. }) => {
+                let t: String = text.chars().take(24).collect();
+                let n = self.edits.len();
+                if n > 1 {
+                    format!("insert “{t}…” (+{} edits)", n - 1)
+                } else if text.contains('\n') {
+                    format!("insert {} lines", text.lines().count())
+                } else {
+                    format!("insert “{t}”")
+                }
+            }
+            Some(Edit::Delete { text, .. }) => {
+                let t: String = text.chars().take(24).collect();
+                let n = self.edits.len();
+                if n > 1 {
+                    format!("delete “{t}…” (+{} edits)", n - 1)
+                } else {
+                    format!("delete “{t}”")
+                }
+            }
+        }
     }
 
     fn apply_forward(&self, buffer: &mut Buffer) {
@@ -147,6 +175,28 @@ impl UndoStack {
     #[must_use]
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
+    }
+
+    /// Histórico de undo (mais recente por último), para UI.
+    #[must_use]
+    pub fn undo_summaries(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.undo.iter().map(EditGroup::summary).collect();
+        if let Some(open) = &self.open {
+            if !open.is_empty() {
+                v.push(format!("(aberto) {}", open.summary()));
+            }
+        }
+        v
+    }
+
+    #[must_use]
+    pub fn redo_summaries(&self) -> Vec<String> {
+        self.redo.iter().map(EditGroup::summary).collect()
+    }
+
+    #[must_use]
+    pub fn undo_len(&self) -> usize {
+        self.undo.len() + usize::from(self.open.as_ref().is_some_and(|g| !g.is_empty()))
     }
 }
 

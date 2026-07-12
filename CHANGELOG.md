@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (mouse + tier B)
+
+- **Mouse completo** (default on, `mouse = false` no TOML desliga):
+  - Clique editor → caret; drag → seleção; duplo → palavra; triplo → linha
+  - Clique árvore/abas/SCM/terminal/menu → foco / ativar
+  - Scroll wheel por painel (editor, árvore, SCM)
+  - Botão direito → which-key
+- **Surround** (`F8`): envolve seleção com `()[]{}<>"'``
+- **Macro** (`F9` grava/para · `F10` play)
+- **Multi-picker** (`Ctrl+Shift+T`): buffers + commands + files
+- **Undo history** (`Ctrl+Shift+U`): lista resumos e desfaz até o item
+- **Fora deste corte (tier B restante):** full vim modal, inlay hints densos, telescope monstro, session workspace avançada
+
 ### Added (find)
 
 - **Palavra completa** no find/replace (`Alt+W`): não casa substring dentro de identificador (ex.: `UI` em `GUI`)

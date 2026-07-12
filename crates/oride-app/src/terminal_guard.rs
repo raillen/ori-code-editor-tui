@@ -3,7 +3,7 @@
 use std::io::{self, Stdout};
 
 use crossterm::event::{
-    DisableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
+    DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
@@ -23,7 +23,7 @@ impl TerminalGuard {
     pub fn enter() -> anyhow::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
         // Kitty/WezTerm/Foot/Ghostty: reporta Ctrl+Shift+letra corretamente.
         // Sem isso, Ctrl+Shift+S vira Ctrl+S e o Save As nunca dispara.

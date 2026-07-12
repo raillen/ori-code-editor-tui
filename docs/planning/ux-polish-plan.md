@@ -42,27 +42,29 @@
 | **U7d** | Search count / hits | Find local e project com N/M legível (já parcial) |
 | **U7e** | Diff read-only | Modal/painel `git diff -- path` a partir do SCM |
 
-## Tier B (futuro — não neste plano)
+## Tier B
 
-- Surround / change around  
-- Undo tree visual completo  
-- Telescope multi-source monstro  
-- Full vim modal default  
-- Inlay hints densos  
-- Macros  
-- Session workspace avançada  
+| Item | Status |
+|------|--------|
+| Surround / change around | **MVP** `F8` |
+| Undo history panel | **MVP** `Ctrl+Shift+U` (não árvore ramificada) |
+| Multi-source picker | **MVP** `Ctrl+Shift+T` (buf+cmd+file) |
+| Macros | **MVP** `F9`/`F10` |
+| Full vim modal default | **futuro** |
+| Inlay hints densos | **futuro** (LSP) |
+| Session workspace avançada | **futuro** |
+| Telescope monstro | **futuro** |
 
-## Mouse (futuro — documentado, pós-plano)
+## Mouse
 
-Após U0–U7e estáveis:
-
-- EnableMouseCapture  
-- Clique = caret; drag = seleção  
-- Clique árvore/abas/terminal/SCM = foco  
-- Scroll wheel por painel  
-- **Custo:** médio · **Δ binário:** ~0 · **Impacto:** alto ND  
-
-Ver checklist em § Aceite futuro mouse.
+| Item | Status |
+|------|--------|
+| EnableMouseCapture | **feito** |
+| Clique = caret; drag = seleção | **feito** |
+| Duplo/triplo clique | **feito** (palavra/linha) |
+| Clique árvore/abas/terminal/SCM/menu | **feito** |
+| Scroll wheel por painel | **feito** |
+| Config `mouse = true/false` | **feito** |
 
 ---
 
@@ -168,10 +170,10 @@ U1 banner + status ────────────────────�
 - [x] Buffer picker + jump list + blame na status  
 - [x] Mouse **não** bloqueia; está documentado como futuro  
 
-## Aceite futuro — mouse (pós-plano)
+## Aceite — mouse
 
-- [ ] Clique editor = caret  
-- [ ] Drag = seleção  
-- [ ] Clique painéis = foco  
-- [ ] Scroll wheel  
-- [ ] Docs + feature flag opcional `mouse = true`  
+- [x] Clique editor = caret  
+- [x] Drag = seleção  
+- [x] Clique painéis = foco  
+- [x] Scroll wheel  
+- [x] Docs + `mouse = true` (default)  
