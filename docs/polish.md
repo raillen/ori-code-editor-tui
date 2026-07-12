@@ -6,16 +6,17 @@ Fatias de DX para candidatar release **0.1.0** (sem LSP ainda).
 
 | Feature | Atalho / notas |
 |---------|----------------|
-| Help overlay | `Ctrl+H` |
-| Find no buffer | `Ctrl+F`, `F3` / `Shift+F3` |
-| Replace | `Ctrl+Shift+H` |
-| Copy / Paste / Cut | `Ctrl+C` / `V` / `X` |
-| Save as | `Ctrl+Shift+S` — browser de pastas + nome do arquivo |
+| Help overlay | `F1` / `Ctrl+G` |
+| Find compacto | `Ctrl+F` barra no rodapé · `F3` next · case/acentos |
+| Replace / replace all | `Ctrl+H` · `Alt+Enter` 1× · `Ctrl+Alt+Enter` all |
+| Seleção multi-linha | Shift+setas/Home/End · Ctrl+A · highlight azul |
+| Copy / Paste / Cut | `Ctrl+C` / `V` / `X` (+ buffer interno) |
+| Save as | `Ctrl+Shift+S` — browser · **Enter** salva · `→` entra pasta |
 | Save all | `Ctrl+Alt+S` |
 | Terminal | `Ctrl+"` (ou `Ctrl+'`) |
-| Open folder / file | browser navegável (`Ctrl+O` / `Ctrl+P`) |
-| Highlight de modal | linha selecionada ciano (palette, browser, find, help) |
-| Aba ativa | fundo ciano + `▶N:título`; `Ctrl+PgUp/PgDn` · `Alt+←/→` · `Ctrl+Shift+[/]` |
+| Open folder / file | browser (`Ctrl+O` / `Ctrl+P`) · confirma com **F2**/Ctrl+Enter/Ctrl+O |
+| Highlight de modal | linha selecionada ciano |
+| Aba ativa | chip branco (bg por célula); `Ctrl+PgUp/PgDn` · `Alt+←/→` |
 | Session leve | restaura workspace+tabs; salva ao sair |
 | Markdown futuro | `docs/markdown.md` § Futuro |
 

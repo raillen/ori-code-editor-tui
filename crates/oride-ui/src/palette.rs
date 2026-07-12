@@ -9,6 +9,16 @@ use ratatui::Frame;
 use crate::theme::UiTheme;
 use crate::tree::pad_row;
 
+/// Barra compacta de find/replace (1–3 linhas no rodapé, não tapa a tela).
+pub struct FindBarView<'a> {
+    pub query: &'a str,
+    pub replace: &'a str,
+    pub show_replace: bool,
+    pub focus_replace: bool,
+    pub status: &'a str,
+    pub options: &'a str,
+}
+
 pub struct PaletteView<'a> {
     pub title: &'a str,
     pub query: &'a str,
@@ -141,6 +151,48 @@ pub fn render_palette(frame: &mut Frame, area: Rect, view: &PaletteView<'_>, _th
     if let Some(pos) = cursor_pos {
         frame.set_cursor_position(pos);
     }
+}
+
+/// Find/replace no rodapé — altura pequena, deixa o buffer legível.
+pub fn render_find_bar(frame: &mut Frame, area: Rect, view: &FindBarView<'_>) {
+    let lines = if view.show_replace { 3u16 } else { 2u16 };
+    let height = lines.min(area.height);
+    if height == 0 || area.width == 0 {
+        return;
+    }
+    let y = area.y + area.height.saturating_sub(height);
+    let rect = Rect::new(area.x, y, area.width, height);
+    frame.render_widget(Clear, rect);
+
+    let w = rect.width as usize;
+    let q_style = if view.focus_replace {
+        Style::default().fg(Color::White).bg(Color::Black)
+    } else {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    };
+    let r_style = if view.focus_replace {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White).bg(Color::Black)
+    };
+    let hint_style = Style::default().fg(Color::Cyan).bg(Color::Black);
+
+    let q_line = pad_row(&format!("Find: {}▌  {}", view.query, view.status), w);
+    let mut out = vec![Line::from(Span::styled(q_line, q_style))];
+    if view.show_replace {
+        let r_line = pad_row(&format!("Repl: {}▌", view.replace), w);
+        out.push(Line::from(Span::styled(r_line, r_style)));
+    }
+    let opt = pad_row(view.options, w);
+    out.push(Line::from(Span::styled(opt, hint_style)));
+
+    frame.render_widget(Paragraph::new(out), rect);
 }
 
 #[cfg(test)]

@@ -4,17 +4,23 @@
 
 ### Added (P4 polish)
 
-- Help overlay (`Ctrl+H`)
-- Find / find next-prev / replace (`Ctrl+F`, `F3`, `Ctrl+Shift+H`)
+- Help overlay (`F1` / `Ctrl+G`)
+- Find compacto no rodapé + replace/replace-all, case e acentos (`Ctrl+F`, `Ctrl+H`, `Alt+C`/`Alt+A`)
 - Clipboard copy/paste/cut (`Ctrl+C/V/X`) via arboard + fallback interno
+- Seleção multi-linha (Shift+setas/Home/End, Ctrl+Shift+Home/End, Ctrl+A) com highlight azul
 - Save as (`Ctrl+Shift+S`) · Save all (`Ctrl+Alt+S`)
 - Terminal toggle (`Ctrl+"` / `Ctrl+'`)
-- **Browser de paths** para abrir pasta/arquivo (navegar dirs, filtrar, `Ctrl+Enter` confirma pasta)
-- **Save as** via browser de pastas (`Ctrl+Shift+S`): digite o nome · `Ctrl+Enter` salva
-- Highlight de linha selecionada nos modais (fundo ciano full-width, igual à árvore)
-- Aba ativa com fundo ciano + número (`▶1:nome`); atalhos `Ctrl+PgUp/PgDn`, `Alt+←/→`, `Ctrl+Shift+[/]`
+- **Browser de paths** para abrir pasta/arquivo (F2 / Ctrl+Enter / Ctrl+O confirma pasta)
+- **Save as** via browser: digite o nome · **Enter** ou Ctrl+S salva · → entra pasta
+- Highlight de linha selecionada nos modais (fundo ciano full-width)
+- Aba ativa com fundo **branco** (chip no buffer); atalhos `Ctrl+PgUp/PgDn`, `Alt+←/→`
 - Session leve: restaura workspace e abas; salva ao sair
 - Docs: `docs/polish.md`; Markdown **futuro** em `docs/markdown.md`
+
+### Fixed
+
+- Seleção / copy-paste / select-all / save-as / confirmar pasta em terminais sem Ctrl+Enter
+- Highlight visual da aba ativa e da seleção no editor
 
 ## 0.1.0-alpha.3
 

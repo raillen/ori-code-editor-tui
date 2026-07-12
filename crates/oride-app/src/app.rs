@@ -13,8 +13,9 @@ use oride_keymap::{Action, Keymap, ResolvedKey};
 use oride_syntax::{continue_list_on_enter, detect_language, HighlightEngine, LanguageId};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
-    render_editor, render_palette, render_status, render_tabs, render_terminal_panel, render_tree,
-    EditorView, PaletteView, StatusModel, TreeView, UiTheme,
+    render_editor, render_find_bar, render_palette, render_status, render_tabs,
+    render_terminal_panel, render_tree, EditorView, FindBarView, PaletteView, StatusModel,
+    TreeView, UiTheme,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
@@ -52,13 +53,8 @@ enum Overlay {
         buffer: String,
     },
     Help,
+    /// Find/replace compacto (barra no rodapé; estado em `App.find`).
     Find,
-    /// `focus_replace`: false = editando find, true = editando replace.
-    Replace {
-        find: String,
-        replace: String,
-        focus_replace: bool,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -292,10 +288,6 @@ impl App {
                 self.handle_find_key(key);
                 true
             }
-            Overlay::Replace { .. } => {
-                self.handle_replace_key(key);
-                true
-            }
         }
     }
 
@@ -304,12 +296,30 @@ impl App {
             return;
         };
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let mode = browser.mode;
+
+        // Confirmar pasta/save: Ctrl+Enter, Alt+Enter, F2, Ctrl+O, Ctrl+S (save as).
+        // Terminais variam: Ctrl+Enter pode vir como Enter+Ctrl, ou Char('\n'/j/m).
+        let confirm = matches!(key.code, KeyCode::F(2))
+            || (matches!(key.code, KeyCode::Enter) && (ctrl || alt))
+            || (ctrl && matches!(key.code, KeyCode::Char('o')))
+            || (ctrl && matches!(key.code, KeyCode::Char('s')) && mode == BrowseMode::SaveAs)
+            || (ctrl
+                && matches!(
+                    key.code,
+                    KeyCode::Char('\n')
+                        | KeyCode::Char('\r')
+                        | KeyCode::Char('j')
+                        | KeyCode::Char('m')
+                ));
 
         let action = match key.code {
             KeyCode::Esc => {
                 self.overlay = Overlay::None;
                 None
             }
+            _ if confirm => Some(browser.confirm_folder()),
             KeyCode::Up | KeyCode::Char('k') if !ctrl => {
                 browser.move_selection(-1);
                 None
@@ -335,12 +345,18 @@ impl App {
                 browser.selected = 0;
                 None
             }
-            KeyCode::Enter if ctrl => Some(browser.confirm_folder()),
+            // Save as: Enter com nome → salva; Right/l → entra na pasta
+            KeyCode::Enter if mode == BrowseMode::SaveAs => {
+                if browser.filter.trim().is_empty() {
+                    self.set_status("save as: digite o nome do arquivo");
+                    None
+                } else {
+                    Some(browser.confirm_folder())
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') if !ctrl => Some(browser.activate()),
             KeyCode::Enter => Some(browser.activate()),
-            KeyCode::Char('o') if ctrl => Some(browser.confirm_folder()),
-            KeyCode::Char(c)
-                if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) && !c.is_control() =>
-            {
+            KeyCode::Char(c) if !ctrl && !alt && !c.is_control() => {
                 browser.filter.push(c);
                 browser.selected = 0;
                 None
@@ -389,97 +405,66 @@ impl App {
     }
 
     fn handle_find_key(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
+
         match key.code {
             KeyCode::Esc => {
                 self.overlay = Overlay::None;
             }
-            KeyCode::Enter | KeyCode::F(3) => {
+            KeyCode::Tab => {
+                if !self.find.show_replace {
+                    self.find.show_replace = true;
+                }
+                self.find.focus_replace = !self.find.focus_replace;
+            }
+            KeyCode::F(3) if shift => {
+                self.jump_find(false);
+            }
+            KeyCode::F(3) | KeyCode::Enter if !alt && !ctrl => {
                 self.jump_find(true);
             }
-            KeyCode::Backspace => {
-                self.find.query.pop();
+            // Alt+Enter: replace one · Ctrl+Alt+Enter: replace all
+            KeyCode::Enter if alt && ctrl => {
+                self.replace_all_matches();
+            }
+            KeyCode::Enter if alt => {
+                self.replace_current_match();
+            }
+            KeyCode::Char('c') if alt && !ctrl => {
+                self.find.toggle_case();
                 self.recompute_find_and_jump();
             }
-            KeyCode::Char(c)
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT) =>
-            {
-                self.find.query.push(c);
+            KeyCode::Char('a') if alt && !ctrl => {
+                self.find.toggle_accents();
                 self.recompute_find_and_jump();
+            }
+            KeyCode::Char('h') if ctrl => {
+                self.find.show_replace = !self.find.show_replace;
+                if self.find.show_replace {
+                    self.find.focus_replace = true;
+                }
+            }
+            KeyCode::Backspace => {
+                if self.find.focus_replace && self.find.show_replace {
+                    self.find.replace.pop();
+                } else {
+                    self.find.query.pop();
+                    self.recompute_find_and_jump();
+                }
+            }
+            KeyCode::Char(c) if !ctrl && !alt && !c.is_control() => {
+                if self.find.focus_replace && self.find.show_replace {
+                    self.find.replace.push(c);
+                } else {
+                    self.find.query.push(c);
+                    self.recompute_find_and_jump();
+                }
             }
             _ => {}
         }
         self.set_status(self.find.status());
-    }
-
-    fn handle_replace_key(&mut self, key: KeyEvent) {
-        let Overlay::Replace {
-            find,
-            replace,
-            focus_replace,
-        } = &self.overlay
-        else {
-            return;
-        };
-        let mut find = find.clone();
-        let mut replace = replace.clone();
-        let mut focus_replace = *focus_replace;
-        match key.code {
-            KeyCode::Esc => {
-                self.overlay = Overlay::None;
-                return;
-            }
-            KeyCode::Tab => {
-                focus_replace = !focus_replace;
-            }
-            KeyCode::Enter => {
-                self.find.query = find.clone();
-                self.recompute_find();
-                if let Some(at) = self.find.current_byte() {
-                    let qlen = self.find.query.len();
-                    if let Ok(doc) = self.store.active_mut() {
-                        let end = oride_core::ByteOffset::new(at.as_usize() + qlen);
-                        doc.set_selection(oride_core::Selection::new(at, end));
-                        let _ = doc.delete_selection();
-                        let _ = doc.insert_text(&replace);
-                    }
-                    self.recompute_find();
-                    self.jump_find(true);
-                    self.set_status(format!("replaced · {}", self.find.status()));
-                } else {
-                    self.set_status("replace: nenhuma ocorrência");
-                }
-                self.overlay = Overlay::Replace {
-                    find,
-                    replace,
-                    focus_replace,
-                };
-                return;
-            }
-            KeyCode::Backspace => {
-                if focus_replace {
-                    replace.pop();
-                } else {
-                    find.pop();
-                }
-            }
-            KeyCode::Char(c)
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT) =>
-            {
-                if focus_replace {
-                    replace.push(c);
-                } else {
-                    find.push(c);
-                }
-            }
-            _ => {}
-        }
-        self.overlay = Overlay::Replace {
-            find,
-            replace,
-            focus_replace,
-        };
     }
 
     fn recompute_find(&mut self) {
@@ -493,9 +478,12 @@ impl App {
 
     fn recompute_find_and_jump(&mut self) {
         self.recompute_find();
-        if let Some(b) = self.find.current_byte() {
+        if let Some(m) = self.find.current_match() {
             if let Ok(doc) = self.store.active_mut() {
-                doc.jump_to_byte(b);
+                doc.select_byte_range(
+                    oride_core::ByteOffset::new(m.start),
+                    oride_core::ByteOffset::new(m.end),
+                );
             }
             self.ensure_cursor_visible();
         }
@@ -503,18 +491,72 @@ impl App {
 
     fn jump_find(&mut self, forward: bool) {
         self.recompute_find();
-        let b = if forward {
+        let m = if forward {
             self.find.next()
         } else {
             self.find.prev()
         };
-        if let Some(b) = b {
+        if let Some(m) = m {
             if let Ok(doc) = self.store.active_mut() {
-                doc.jump_to_byte(b);
+                doc.select_byte_range(
+                    oride_core::ByteOffset::new(m.start),
+                    oride_core::ByteOffset::new(m.end),
+                );
             }
             self.ensure_cursor_visible();
         }
         self.set_status(self.find.status());
+    }
+
+    fn replace_current_match(&mut self) {
+        self.recompute_find();
+        let Some(m) = self.find.current_match() else {
+            self.set_status("replace: nenhuma ocorrência");
+            return;
+        };
+        let repl = self.find.replace.clone();
+        if let Ok(doc) = self.store.active_mut() {
+            doc.select_byte_range(
+                oride_core::ByteOffset::new(m.start),
+                oride_core::ByteOffset::new(m.end),
+            );
+            let _ = doc.delete_selection();
+            let _ = doc.insert_text(&repl);
+        }
+        self.recompute_find();
+        if let Some(m) = self.find.current_match() {
+            if let Ok(doc) = self.store.active_mut() {
+                doc.select_byte_range(
+                    oride_core::ByteOffset::new(m.start),
+                    oride_core::ByteOffset::new(m.end),
+                );
+            }
+        }
+        self.set_status(format!("replaced 1 · {}", self.find.status()));
+    }
+
+    fn replace_all_matches(&mut self) {
+        self.recompute_find();
+        if self.find.matches.is_empty() {
+            self.set_status("replace all: 0 ocorrências");
+            return;
+        }
+        let repl = self.find.replace.clone();
+        let matches: Vec<_> = self.find.matches.clone();
+        let n = matches.len();
+        // De trás para frente para não invalidar offsets
+        if let Ok(doc) = self.store.active_mut() {
+            for m in matches.into_iter().rev() {
+                doc.select_byte_range(
+                    oride_core::ByteOffset::new(m.start),
+                    oride_core::ByteOffset::new(m.end),
+                );
+                let _ = doc.delete_selection();
+                let _ = doc.insert_text(&repl);
+            }
+        }
+        self.recompute_find();
+        self.set_status(format!("replace all: {n} ocorrências"));
     }
 
     fn handle_palette_key(&mut self, key: KeyEvent) {
@@ -907,6 +949,8 @@ impl App {
                 self.overlay = Overlay::Help;
             }
             Action::Find => {
+                self.find.show_replace = false;
+                self.find.focus_replace = false;
                 self.overlay = Overlay::Find;
                 self.set_status(self.find.status());
             }
@@ -917,11 +961,14 @@ impl App {
                 self.jump_find(false);
             }
             Action::Replace => {
-                self.overlay = Overlay::Replace {
-                    find: self.find.query.clone(),
-                    replace: String::new(),
-                    focus_replace: false,
-                };
+                self.find.show_replace = true;
+                self.find.focus_replace = true;
+                self.overlay = Overlay::Find;
+                self.set_status(self.find.status());
+            }
+            Action::SelectAll => {
+                self.store.active_mut()?.select_all();
+                self.set_status("select all");
             }
             Action::Copy => {
                 let text = self
@@ -939,15 +986,14 @@ impl App {
                         }
                     })
                     .unwrap_or_default();
-                match clipboard::copy_text(&text) {
-                    Ok(()) => self.set_status(format!("copied {} bytes", text.len())),
-                    Err(e) => self.set_status(e),
-                }
+                // Sempre grava no buffer interno; arboard é best-effort.
+                let _ = clipboard::copy_text(&text);
+                self.set_status(format!("copied {} bytes", text.len()));
             }
             Action::Paste => {
                 let text = clipboard::paste_text();
                 if text.is_empty() {
-                    self.set_status("clipboard vazio");
+                    self.set_status("clipboard vazio (Ctrl+C copia · buffer interno se sem X11)");
                 } else {
                     self.store.active_mut()?.insert_text(&text)?;
                     self.set_status(format!("pasted {} bytes", text.len()));
@@ -958,16 +1004,38 @@ impl App {
                     let doc = self.store.active()?;
                     let s = doc.selected_text();
                     if s.is_empty() {
-                        self.set_status("nada selecionado para cortar");
-                        return Ok(());
+                        // Como VS Code: corta a linha atual se não há seleção
+                        if let Ok(c) = doc.caret() {
+                            doc.buffer().line_text(c.line).unwrap_or_default()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        s
                     }
-                    s
                 };
-                if let Err(e) = clipboard::copy_text(&text) {
-                    self.set_status(e);
+                if text.is_empty() {
+                    self.set_status("nada para cortar");
                     return Ok(());
                 }
-                self.store.active_mut()?.delete_selection()?;
+                let had_sel = !self.store.active()?.selection().is_empty();
+                let _ = clipboard::copy_text(&text);
+                if had_sel {
+                    self.store.active_mut()?.delete_selection()?;
+                } else {
+                    // corta linha inteira + \n
+                    let doc = self.store.active_mut()?;
+                    let caret = doc.caret()?;
+                    let start = doc.buffer().line_to_byte(caret.line)?;
+                    let line = doc.buffer().line_text(caret.line)?;
+                    let mut end = oride_core::ByteOffset::new(start.as_usize() + line.len());
+                    // inclui newline se existir
+                    if end.as_usize() < doc.buffer().len_bytes() {
+                        end = oride_core::ByteOffset::new(end.as_usize() + 1);
+                    }
+                    doc.select_byte_range(start, end);
+                    doc.delete_selection()?;
+                }
                 self.set_status(format!("cut {} bytes", text.len()));
             }
             Action::Undo => {
@@ -1015,6 +1083,12 @@ impl App {
             }
             Action::MoveLineEnd { extend } => {
                 self.store.active_mut()?.move_line_end(extend)?;
+            }
+            Action::MoveDocStart { extend } => {
+                self.store.active_mut()?.move_buffer_start(extend)?;
+            }
+            Action::MoveDocEnd { extend } => {
+                self.store.active_mut()?.move_buffer_end(extend)?;
             }
             Action::PageUp => {
                 let steps = self.last_editor_height.saturating_sub(1).max(1);
@@ -1463,40 +1537,17 @@ impl App {
                 render_palette(frame, area, &view, &self.theme);
             }
             Overlay::Find => {
-                let items = [self.find.status()];
-                let view = PaletteView {
-                    title: "find (Enter/F3 próximo · Esc)",
+                let status = self.find.status();
+                let options = self.find.options_label();
+                let view = FindBarView {
                     query: &self.find.query,
-                    items: &items,
-                    selected: 0,
-                    hint: "digite · Enter/F3 próximo · Esc",
+                    replace: &self.find.replace,
+                    show_replace: self.find.show_replace,
+                    focus_replace: self.find.focus_replace,
+                    status: &status,
+                    options: &options,
                 };
-                render_palette(frame, area, &view, &self.theme);
-            }
-            Overlay::Replace {
-                find,
-                replace,
-                focus_replace,
-            } => {
-                let field = if *focus_replace { "replace" } else { "find" };
-                let q = if *focus_replace {
-                    replace.as_str()
-                } else {
-                    find.as_str()
-                };
-                let items = [
-                    format!("find: {find}"),
-                    format!("replace: {replace}"),
-                    "Tab alterna campo · Enter substitui atual · Esc".into(),
-                ];
-                let view = PaletteView {
-                    title: &format!("replace [{field}]"),
-                    query: q,
-                    items: &items,
-                    selected: if *focus_replace { 1 } else { 0 },
-                    hint: "Tab campo · Enter substitui · Esc",
-                };
-                render_palette(frame, area, &view, &self.theme);
+                render_find_bar(frame, area, &view);
             }
         }
     }
@@ -1551,13 +1602,15 @@ impl App {
             Err(_) => return,
         };
         let caret = doc.caret().unwrap_or_default();
+        let selection = doc.selection();
         let view = EditorView {
             buffer: doc.buffer(),
             caret,
+            selection,
             scroll_y: self.scroll_y,
             show_line_numbers: self.show_line_numbers,
             highlights: self.highlight.spans(),
-            show_cursor: self.focus == Focus::Editor && self.overlay == Overlay::None,
+            show_cursor: self.focus == Focus::Editor && matches!(self.overlay, Overlay::None),
             soft_wrap: self.soft_wrap,
         };
         render_editor(frame, editor_area, &view, &self.theme);
@@ -1620,13 +1673,14 @@ fn build_default_keymap() -> Keymap {
 
 const HELP_LINES: &[&str] = &[
     "Ctrl+S save · Ctrl+Shift+S save as · Ctrl+Alt+S save all",
-    "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut",
-    "Ctrl+F find · F3/Shift+F3 next/prev · Ctrl+Shift+H replace",
+    "Ctrl+Z/Y undo/redo · Ctrl+C/V/X copy/paste/cut · Ctrl+A select all",
+    "Shift+setas/Home/End seleciona · Ctrl+Shift+Home/End até início/fim",
+    "Ctrl+F find (barra) · F3 next · Ctrl+H replace · Alt+C case · Alt+A acentos",
+    "Find: Alt+Enter replace 1× · Ctrl+Alt+Enter replace all · Tab campo",
     "Ctrl+B tree · Ctrl+E editor · Ctrl+O pasta · Ctrl+P arquivo",
-    "Ctrl+PgUp/PgDn ou Alt+←/→ abas · Ctrl+N/W nova/fecha aba",
-    "Ctrl+H help · Ctrl+\" terminal · Alt+Z soft wrap · Ctrl+/ comment",
-    "Browser: ↑↓ · Enter entra/abre · Ctrl+Enter confirma · digite filtra",
-    "Save as: navegue pastas · digite nome · Ctrl+Enter salva",
+    "Ctrl+PgUp/PgDn · Alt+←/→ abas · Ctrl+N/W nova/fecha · F1 help",
+    "Browser pasta: ↑↓ · Enter entra · F2/Ctrl+Enter/Ctrl+O confirma",
+    "Save as: digite nome · Enter ou Ctrl+S salva · → entra pasta",
 ];
 
 fn fuzzy_match(query: &str, candidate: &str) -> bool {
@@ -1804,6 +1858,15 @@ mod tests {
         );
         assert_eq!(
             app.map_key(key_ctrl(KeyCode::Char('h'))),
+            Some(KeyCommand::Action(Action::Replace))
+        );
+        assert_eq!(
+            app.map_key(KeyEvent {
+                code: KeyCode::F(1),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            }),
             Some(KeyCommand::Action(Action::Help))
         );
         assert_eq!(
@@ -1893,5 +1956,86 @@ mod tests {
             app.map_key(alt_right),
             Some(KeyCommand::Action(Action::NextTab))
         );
+    }
+
+    #[test]
+    fn selection_extend_and_select_all() {
+        use crossterm::event::KeyModifiers;
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::InsertChar('a'));
+        app.apply(KeyCommand::InsertChar('b'));
+        app.apply(KeyCommand::InsertChar('c'));
+        app.apply(KeyCommand::Action(Action::MoveLineStart { extend: false }));
+        app.apply(KeyCommand::Action(Action::MoveRight { extend: true }));
+        app.apply(KeyCommand::Action(Action::MoveRight { extend: true }));
+        let doc = app.store.active().unwrap();
+        assert_eq!(doc.selected_text(), "ab");
+
+        app.apply(KeyCommand::Action(Action::SelectAll));
+        let doc = app.store.active().unwrap();
+        assert_eq!(doc.selected_text(), "abc");
+
+        let shift_end = KeyEvent {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(shift_end),
+            Some(KeyCommand::Action(Action::MoveLineEnd { extend: true }))
+        );
+        let ctrl_a = KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(ctrl_a),
+            Some(KeyCommand::Action(Action::SelectAll))
+        );
+        let ctrl_shift_end = KeyEvent {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        assert_eq!(
+            app.map_key(ctrl_shift_end),
+            Some(KeyCommand::Action(Action::MoveDocEnd { extend: true }))
+        );
+    }
+
+    #[test]
+    fn copy_paste_roundtrip_internal() {
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::InsertChar('x'));
+        app.apply(KeyCommand::InsertChar('y'));
+        app.apply(KeyCommand::Action(Action::SelectAll));
+        app.apply(KeyCommand::Action(Action::Copy));
+        app.apply(KeyCommand::Action(Action::MoveDocEnd { extend: false }));
+        app.apply(KeyCommand::Action(Action::Paste));
+        let text = app.store.active().unwrap().buffer().as_string();
+        assert_eq!(text, "xyxy");
+    }
+
+    #[test]
+    fn save_as_enter_confirms_with_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new_empty();
+        app.apply(KeyCommand::InsertChar('z'));
+        let mut browser = crate::browser::PathBrowser::new(dir.path(), BrowseMode::SaveAs);
+        browser.filter = "out.txt".into();
+        app.overlay = Overlay::Browse(browser);
+        // Enter no SaveAs com nome → salva
+        app.handle_key(KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(dir.path().join("out.txt").exists());
     }
 }

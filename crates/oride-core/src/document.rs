@@ -161,6 +161,29 @@ impl Document {
         Ok(())
     }
 
+    /// Início do buffer (Ctrl+Home).
+    pub fn move_buffer_start(&mut self, extend: bool) -> Result<(), DocumentError> {
+        self.preferred_column = Some(0);
+        self.move_head_to(ByteOffset::new(0), extend);
+        Ok(())
+    }
+
+    /// Fim do buffer (Ctrl+End).
+    pub fn move_buffer_end(&mut self, extend: bool) -> Result<(), DocumentError> {
+        let head = ByteOffset::new(self.buffer.len_bytes());
+        self.preferred_column = None;
+        self.move_head_to(head, extend);
+        Ok(())
+    }
+
+    /// Seleciona todo o documento (Ctrl+A).
+    pub fn select_all(&mut self) {
+        let end = ByteOffset::new(self.buffer.len_bytes());
+        self.selection = Selection::new(ByteOffset::new(0), end);
+        self.preferred_column = None;
+        self.undo.commit_group();
+    }
+
     /// Título para tab: nome do arquivo ou "untitled".
     #[must_use]
     pub fn tab_title(&self) -> String {
@@ -298,6 +321,11 @@ impl Document {
                 ))
             })?,
         };
+        if let Some(parent) = target.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
         std::fs::write(&target, self.buffer.as_string())?;
         self.path = Some(target);
         self.mark_saved();
@@ -320,6 +348,16 @@ impl Document {
         let len = self.buffer.len_bytes();
         let b = ByteOffset::new(byte.as_usize().min(len));
         self.selection = Selection::caret(b);
+        self.preferred_column = None;
+        self.undo.commit_group();
+    }
+
+    /// Seleciona o intervalo `[start, end)` em bytes e coloca o head no fim.
+    pub fn select_byte_range(&mut self, start: ByteOffset, end: ByteOffset) {
+        let len = self.buffer.len_bytes();
+        let s = ByteOffset::new(start.as_usize().min(len));
+        let e = ByteOffset::new(end.as_usize().min(len));
+        self.selection = Selection::new(s, e);
         self.preferred_column = None;
         self.undo.commit_group();
     }

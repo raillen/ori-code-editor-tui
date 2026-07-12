@@ -239,11 +239,11 @@ impl PathBrowser {
     pub fn hint(&self) -> &'static str {
         match self.mode {
             BrowseMode::Folder => {
-                "↑↓ navegar · Enter entra · Ctrl+Enter abre esta pasta · digite filtra · Esc"
+                "↑↓ · Enter entra pasta · F2/Ctrl+Enter/Ctrl+O abre esta pasta · Esc"
             }
-            BrowseMode::File => "↑↓ navegar · Enter abre arquivo/entra · digite filtra · Esc",
+            BrowseMode::File => "↑↓ · Enter abre arquivo/entra · digite filtra · Esc",
             BrowseMode::SaveAs => {
-                "↑↓ pastas · Enter entra · digite NOME do arquivo · Ctrl+Enter salva · Esc"
+                "↑↓ pastas · digite NOME · Enter/Ctrl+S salva · → entra pasta · Esc"
             }
         }
     }

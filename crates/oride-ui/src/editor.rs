@@ -1,8 +1,9 @@
-//! Viewport do buffer com gutter, caret, soft wrap e syntax highlight.
+//! Viewport do buffer com gutter, caret, seleção multi-linha, soft wrap e syntax.
 
-use oride_core::{Buffer, Caret};
+use oride_core::{Buffer, Caret, Selection};
 use oride_syntax::{line_spans, HighlightKind, HighlightSpan};
 use ratatui::layout::{Position, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
@@ -13,6 +14,8 @@ use crate::theme::UiTheme;
 pub struct EditorView<'a> {
     pub buffer: &'a Buffer,
     pub caret: Caret,
+    /// Seleção atual (anchor/head em bytes).
+    pub selection: Selection,
     /// Primeira **linha lógica** visível (0-based).
     pub scroll_y: usize,
     pub show_line_numbers: bool,
@@ -25,6 +28,27 @@ pub struct EditorView<'a> {
 struct CursorPaint {
     spans: Vec<Span<'static>>,
     cursor_col: u16,
+}
+
+#[derive(Clone, Copy)]
+struct SelPaint {
+    active: bool,
+    start: usize,
+    end: usize,
+}
+
+impl SelPaint {
+    fn from_selection(sel: Selection) -> Self {
+        Self {
+            active: !sel.is_empty(),
+            start: sel.start().as_usize(),
+            end: sel.end().as_usize(),
+        }
+    }
+
+    fn contains(self, byte: usize) -> bool {
+        self.active && byte >= self.start && byte < self.end
+    }
 }
 
 pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme: &UiTheme) {
@@ -45,6 +69,8 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
     let line_count = view.buffer.line_count().max(1);
     let start = view.scroll_y.min(line_count.saturating_sub(1));
 
+    let sel = SelPaint::from_selection(view.selection);
+
     let mut cursor_pos: Option<Position> = None;
     let mut lines: Vec<Line> = Vec::with_capacity(visible_rows);
     let mut visual_row = 0usize;
@@ -60,15 +86,12 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
 
         let chunks = if view.soft_wrap {
             wrap_chunks(&content, text_width)
+        } else if view.show_cursor && logical == view.caret.line {
+            let col = view.caret.column.min(content.chars().count());
+            let hscroll = col.saturating_sub(text_width.saturating_sub(1));
+            vec![chunk_from_col(&content, hscroll, text_width)]
         } else {
-            // uma “chunk” com hscroll se for a linha do caret; senão prefixo
-            if view.show_cursor && logical == view.caret.line {
-                let col = view.caret.column.min(content.chars().count());
-                let hscroll = col.saturating_sub(text_width.saturating_sub(1));
-                vec![chunk_from_col(&content, hscroll, text_width)]
-            } else {
-                vec![truncate_to_width(&content, text_width)]
-            }
+            vec![truncate_to_width(&content, text_width)]
         };
 
         for (wi, chunk) in chunks.iter().enumerate() {
@@ -128,6 +151,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
                     text_width,
                     view.highlights,
                     theme,
+                    sel,
                 );
                 spans.extend(painted.spans);
                 let x = area.x + gutter + painted.cursor_col;
@@ -142,6 +166,7 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
                     text_width,
                     view.highlights,
                     theme,
+                    sel,
                 ));
             }
 
@@ -164,6 +189,13 @@ pub fn render_editor(frame: &mut Frame, area: Rect, view: &EditorView<'_>, theme
     if let Some(pos) = cursor_pos {
         frame.set_cursor_position(pos);
     }
+}
+
+fn selection_style(_theme: &UiTheme) -> Style {
+    Style::default()
+        .fg(Color::White)
+        .bg(Color::Blue)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn wrap_chunks(content: &str, width: usize) -> Vec<String> {
@@ -197,9 +229,14 @@ fn paint_highlighted_line(
     text_width: usize,
     highlights: &[HighlightSpan],
     theme: &UiTheme,
+    sel: SelPaint,
 ) -> Vec<Span<'static>> {
     if text_width == 0 {
         return Vec::new();
+    }
+    // Pintura char-a-char quando há seleção para bg contínuo multi-linha
+    if sel.active {
+        return paint_chars(content, line_byte, text_width, highlights, theme, None, sel).spans;
     }
     let segs = if content.is_empty() {
         Vec::new()
@@ -236,6 +273,27 @@ fn paint_chunk_with_cursor(
     text_width: usize,
     highlights: &[HighlightSpan],
     theme: &UiTheme,
+    sel: SelPaint,
+) -> CursorPaint {
+    paint_chars(
+        content,
+        line_byte,
+        text_width,
+        highlights,
+        theme,
+        Some(column),
+        sel,
+    )
+}
+
+fn paint_chars(
+    content: &str,
+    line_byte: usize,
+    text_width: usize,
+    highlights: &[HighlightSpan],
+    theme: &UiTheme,
+    cursor_col: Option<usize>,
+    sel: SelPaint,
 ) -> CursorPaint {
     if text_width == 0 {
         return CursorPaint {
@@ -245,8 +303,8 @@ fn paint_chunk_with_cursor(
     }
 
     let chars: Vec<char> = content.chars().collect();
-    let col = column.min(chars.len());
-    let cursor_local = col as u16;
+    let col = cursor_col.unwrap_or(usize::MAX).min(chars.len());
+    let cursor_local = if cursor_col.is_some() { col as u16 } else { 0 };
 
     let mut spans = Vec::new();
     let mut byte_off = line_byte;
@@ -255,8 +313,10 @@ fn paint_chunk_with_cursor(
             break;
         }
         let kind = kind_at(byte_off, highlights);
-        let style = if i == col {
+        let style = if cursor_col.is_some() && i == col {
             theme.cursor_style()
+        } else if sel.contains(byte_off) {
+            selection_style(theme)
         } else {
             theme.syntax_style(kind)
         };
@@ -265,18 +325,34 @@ fn paint_chunk_with_cursor(
     }
 
     let mut painted = chars.len().min(text_width);
-    if col >= chars.len() && painted < text_width {
-        spans.push(Span::styled(" ".to_string(), theme.cursor_style()));
+    if cursor_col.is_some() && col >= chars.len() && painted < text_width {
+        let style = if sel.contains(byte_off) {
+            selection_style(theme)
+        } else {
+            theme.cursor_style()
+        };
+        spans.push(Span::styled(" ".to_string(), style));
         painted += 1;
     }
+    // Preenche resto da linha: se a seleção cruza o fim da linha (multi-linha),
+    // pinta o padding com cor de seleção (estilo VS Code).
     if painted < text_width {
-        spans.push(Span::styled(
-            " ".repeat(text_width - painted),
-            theme.editor_style(),
-        ));
+        let pad = text_width - painted;
+        let rest_selected = sel.contains(byte_off);
+        let style = if rest_selected {
+            selection_style(theme)
+        } else {
+            theme.editor_style()
+        };
+        spans.push(Span::styled(" ".repeat(pad), style));
     }
     if spans.is_empty() {
-        spans.push(Span::styled(" ".to_string(), theme.cursor_style()));
+        let style = if cursor_col.is_some() {
+            theme.cursor_style()
+        } else {
+            theme.editor_style()
+        };
+        spans.push(Span::styled(" ".to_string(), style));
         if text_width > 1 {
             spans.push(Span::styled(
                 " ".repeat(text_width - 1),
@@ -307,6 +383,7 @@ fn truncate_to_width(s: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oride_core::ByteOffset;
 
     #[test]
     fn truncate_respects_char_count() {
@@ -323,7 +400,12 @@ mod tests {
     #[test]
     fn paint_empty_line_fills_width() {
         let theme = UiTheme::default();
-        let spans = paint_highlighted_line("", 0, 10, &[], &theme);
+        let sel = SelPaint {
+            active: false,
+            start: 0,
+            end: 0,
+        };
+        let spans = paint_highlighted_line("", 0, 10, &[], &theme, sel);
         let w: usize = spans.iter().map(|s| s.content.chars().count()).sum();
         assert_eq!(w, 10);
     }
@@ -331,8 +413,29 @@ mod tests {
     #[test]
     fn cursor_paint_marks_column() {
         let theme = UiTheme::default();
-        let painted = paint_chunk_with_cursor("hello", 0, 2, 20, &[], &theme);
+        let sel = SelPaint {
+            active: false,
+            start: 0,
+            end: 0,
+        };
+        let painted = paint_chunk_with_cursor("hello", 0, 2, 20, &[], &theme, sel);
         assert_eq!(painted.cursor_col, 2);
         assert_eq!(painted.spans[2].content.as_ref(), "l");
+    }
+
+    #[test]
+    fn selection_paints_blue_background() {
+        let theme = UiTheme::default();
+        // seleciona "ell" em "hello" (bytes 1..4)
+        let sel = SelPaint {
+            active: true,
+            start: 1,
+            end: 4,
+        };
+        let painted = paint_chunk_with_cursor("hello", 0, 0, 20, &[], &theme, sel);
+        assert_eq!(painted.spans[1].style.bg, Some(Color::Blue));
+        assert_eq!(painted.spans[2].style.bg, Some(Color::Blue));
+        assert_eq!(painted.spans[3].style.bg, Some(Color::Blue));
+        let _ = ByteOffset::new(0);
     }
 }

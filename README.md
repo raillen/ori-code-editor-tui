@@ -38,27 +38,32 @@ cargo build --release
 |-----|--------|
 | Type / Enter / Backspace / Delete | Edit |
 | Arrows, Home, End, PgUp/PgDn | Move |
+| `Shift`+arrows/Home/End | Extend selection (multi-line) |
+| `Ctrl+Shift+Home` / `End` | Select to doc start/end |
+| `Ctrl+A` | Select all |
 | `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | **Save as…** |
+| `Ctrl+Shift+S` | **Save as…** (path browser · Enter salva) |
 | `Ctrl+Alt+S` | **Save all** |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+N` / `Ctrl+W` | New tab / close tab (2× if dirty) |
 | `Ctrl+PgUp` / `Ctrl+PgDn` | Previous / next tab |
 | `Alt+←` / `Alt+→` | Previous / next tab |
-| (tab bar) | Aba ativa = chip ciano (fundo da aba inteira) |
+| (tab bar) | Aba ativa = chip **branco** (fundo sólido) |
 | `Ctrl+B` / `Ctrl+E` | Focus tree / editor |
-| `Ctrl+O` | **Open folder** (navigate dirs · `Ctrl+Enter` confirma) |
+| `Ctrl+O` | **Open folder** (`F2` / `Ctrl+Enter` / `Ctrl+O` confirma) |
 | `Ctrl+P` | **Open file** (navigate dirs/files) |
 | `Ctrl+"` / `Ctrl+'` | Toggle terminal |
-| `Ctrl+H` | Help |
-| `Ctrl+F` / `F3` | Find / next |
-| `Ctrl+Shift+H` | Replace |
+| `F1` / `Ctrl+G` | Help |
+| `Ctrl+F` / `F3` | Find bar (footer) / next |
+| `Ctrl+H` | Replace (same bar) |
+| `Alt+C` / `Alt+A` | Toggle case / ignore accents (in find) |
+| `Alt+Enter` / `Ctrl+Alt+Enter` | Replace one / replace all |
 | `Ctrl+C` / `V` / `X` | Copy / paste / cut |
 | `Alt+Z` | Soft wrap |
 | `Ctrl+/` | Toggle comment |
 | `Esc` or `Ctrl+Q` | Close overlay / quit |
 
-**Browser (`Ctrl+O` / `Ctrl+P` / Save as):** linha ciano = seleção · `↑↓` · `Enter` entra/abre · `Ctrl+Enter` confirma · digite filtra/nome · `Backspace` sobe.
+**Browser (`Ctrl+O` / `Ctrl+P` / Save as):** linha ciano = seleção · `↑↓` · `Enter` entra/abre (save as: **Enter salva**) · `F2`/`Ctrl+O` confirma pasta · digite filtra/nome.
 
 **Tree (focused):** `↑↓`/`jk` · `Enter` open/expand · `←→`/`hl` · `Space` toggle · `Tab`/`Esc` → editor.  
 **Terminal:** type when focused · `Esc` → editor.  
