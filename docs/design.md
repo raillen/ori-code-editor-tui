@@ -341,6 +341,12 @@ Cada PR = um conceito; ordem topologicamente segura.
 
 **SemVer produto editor:** começar `0.1.0-alpha` até P3 estável; `0.1.0` com P4.
 
+### Pós-0.1 (decisões atuais)
+
+Ver plano canônico: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)**.
+
+Resumo: **P5** project find (`Ctrl+Shift+F`, rg+Rust) → **P6** fence injections → **P7** MD preview ANSI → **P8** plugin surface incremental → **splits / multi-cursor** só em minor/major posteriores.
+
 ---
 
 ## Estrutura de diretórios no primeiro commit

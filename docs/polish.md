@@ -31,6 +31,12 @@
 
 ## Pós-0.1
 
-- Preview MD, fence injections, MDX JSX
-- Search in project, splits, multi-cursor
-- Plugins externos
+Plano detalhado e decisões: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)**.
+
+| Ordem | Fatia | Notas |
+|-------|--------|--------|
+| **P5** | Search in project | `Ctrl+Shift+F` · `rg` + fallback Rust |
+| **P6** | Injections em fences | highlight ` ```lang ` no MD |
+| **P7** | Preview MD ANSI | painel TUI read-only |
+| **P8** | Plugins (incremento) | traits built-in; sem Lua/WASM ainda |
+| depois | Splits · multi-cursor | minor/major futuras |

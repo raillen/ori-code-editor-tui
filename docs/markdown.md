@@ -36,17 +36,18 @@ Também na command palette: **Toggle soft wrap**, **Toggle comment**.
 
 - Soft wrap: scroll ainda é por linha lógica
 
-## Futuro (não no 0.1)
+## Futuro (plano pós-0.1)
 
-Planejado **após** o freeze de polimento 0.1 / LSP básico — **não** bloquear o roadmap atual:
+Decisões e fatias: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)** (P6 injections, P7 preview ANSI).
 
-| Item | Descrição | Quando (estimado) |
-|------|-----------|-------------------|
-| **Preview renderizado do Markdown** | Painel split (ou overlay) com HTML/ANSI renderizado do buffer `.md` | pós-0.1 (P1 design) |
-| **Highlight da linguagem dentro de code fences** | Injections tree-sitter: conteúdo de ` ```rust ` colorido com grammar da linguagem | pós-0.1 / polish syntax |
-| **Parse JSX real no MDX** | Grammar/injections para JSX em `.mdx` (não só highlight MD) | pós-0.1 language pack |
+| Item | Descrição | Fatia |
+|------|-----------|--------|
+| **Highlight em code fences** | Injection: ` ```oris `/`js`/… com grammar da linguagem | **P6** |
+| **Preview Markdown ANSI** | Painel TUI read-only (não browser) | **P7** |
+| **Parse JSX real no MDX** | Além do highlight MD genérico | depois de P6/P7 |
+| Preview HTML/browser | Opcional; não prioritário | major futura |
 
-Outros desejáveis MD (também futuros): wiki-links, frontmatter YAML colorido, outline de headings na palette.
+Outros desejáveis: wiki-links, frontmatter YAML, outline de headings na palette.
 
 ## Validação
 
