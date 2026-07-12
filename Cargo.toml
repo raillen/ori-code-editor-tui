@@ -10,6 +10,7 @@ members = [
     "crates/oride-syntax",
     "crates/tree-sitter-oriscript",
     "crates/oride-lsp",
+    "crates/oride-search",
     "crates/oride-ui",
     "crates/oride-app",
     "crates/oride",
@@ -35,6 +36,7 @@ oride-syntax = { path = "crates/oride-syntax" }
 oride-ui = { path = "crates/oride-ui" }
 oride-app = { path = "crates/oride-app" }
 oride-lsp = { path = "crates/oride-lsp" }
+oride-search = { path = "crates/oride-search" }
 tree-sitter-oriscript = { path = "crates/tree-sitter-oriscript" }
 serde_json = "1"
 regex = "1"

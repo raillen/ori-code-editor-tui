@@ -44,6 +44,8 @@ SemVer sugerido (produto editor):
 
 ## P5 — Search in project (`Ctrl+Shift+F`)
 
+**Status:** implementado em `0.1.0-alpha.5+` (crate `oride-search` + UI).
+
 ### Objetivo
 
 Buscar texto (e opcionalmente regex) em **todo o workspace**, listar hits, saltar para arquivo+linha.
@@ -93,6 +95,8 @@ oride-app
 ---
 
 ## P6 — Language injections em code fences
+
+**Status:** implementado (MVP) — `collect_markdown_spans` + `highlight_language_slice`.
 
 ### O que é (resumo)
 

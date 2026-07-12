@@ -95,7 +95,7 @@ impl HighlightEngine {
     }
 }
 
-fn language_ts(id: LanguageId) -> Option<tree_sitter::Language> {
+pub(crate) fn language_ts(id: LanguageId) -> Option<tree_sitter::Language> {
     let lang = match id {
         LanguageId::Plain | LanguageId::Markdown | LanguageId::Mdx => return None,
         LanguageId::OriScript => tree_sitter_oriscript::LANGUAGE.into(),
@@ -104,6 +104,38 @@ fn language_ts(id: LanguageId) -> Option<tree_sitter::Language> {
         LanguageId::Css => tree_sitter_css::LANGUAGE.into(),
     };
     Some(lang)
+}
+
+/// Highlight de um fragmento (ex.: conteúdo de fence) com offsets absolutos `base`.
+pub(crate) fn highlight_language_slice(
+    language: LanguageId,
+    slice: &str,
+    base: usize,
+) -> Vec<HighlightSpan> {
+    let mut out = Vec::new();
+    if slice.is_empty() {
+        return out;
+    }
+    let Some(lang) = language_ts(language) else {
+        return out;
+    };
+    let mut parser = Parser::new();
+    if parser.set_language(&lang).is_err() {
+        return out;
+    }
+    let Some(tree) = parser.parse(slice, None) else {
+        return out;
+    };
+    let mut local = Vec::new();
+    collect_spans(tree.root_node(), slice, &mut local);
+    for s in local {
+        out.push(HighlightSpan {
+            start: base + s.start,
+            end: base + s.end,
+            kind: s.kind,
+        });
+    }
+    out
 }
 
 fn collect_spans(node: tree_sitter::Node, source: &str, out: &mut Vec<HighlightSpan>) {

@@ -35,8 +35,8 @@ Plano detalhado e decisões: **[`docs/planning/post-0.1-roadmap.md`](planning/po
 
 | Ordem | Fatia | Notas |
 |-------|--------|--------|
-| **P5** | Search in project | `Ctrl+Shift+F` · `rg` + fallback Rust |
-| **P6** | Injections em fences | highlight ` ```lang ` no MD |
+| **P5** | Search in project | **feito** · `Ctrl+Shift+F` · `rg` + fallback Rust |
+| **P6** | Injections em fences | **feito (MVP)** · `oris`/`js`/`html`/`css` |
 | **P7** | Preview MD ANSI | painel TUI read-only |
 | **P8** | Plugins (incremento) | traits built-in; sem Lua/WASM ainda |
 | depois | Splits · multi-cursor | minor/major futuras |

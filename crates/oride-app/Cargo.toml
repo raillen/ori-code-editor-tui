@@ -16,6 +16,7 @@ oride-git = { workspace = true }
 oride-terminal = { workspace = true }
 oride-syntax = { workspace = true }
 oride-lsp = { workspace = true }
+oride-search = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 anyhow = { workspace = true }

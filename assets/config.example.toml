@@ -30,6 +30,7 @@ gutter_width = 5
 "ctrl+q" = "quit"
 "ctrl+a" = "select_all"
 "ctrl+f" = "find"
+"ctrl+shift+f" = "project_find"
 "f3" = "find_next"
 "ctrl+h" = "replace"
 "ctrl+shift+h" = "replace"

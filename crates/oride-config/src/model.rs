@@ -435,6 +435,7 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+f", "find"),
         ("f3", "find_next"),
         ("shift+f3", "find_prev"),
+        ("ctrl+shift+f", "project_find"),
         ("ctrl+h", "replace"),
         ("ctrl+shift+h", "replace"),
         ("f1", "help"),
@@ -487,7 +488,7 @@ pub fn default_key_bindings() -> BTreeMap<String, String> {
         ("ctrl+shift+p", "command_palette"),
         ("ctrl+p", "open_file_fuzzy"),
         ("ctrl+shift+n", "tree_new_file"),
-        ("ctrl+shift+f", "tree_new_dir"),
+        ("ctrl+shift+d", "tree_new_dir"),
         ("f5", "tree_refresh"),
         // P3 LSP
         ("ctrl+space", "lsp_complete"),

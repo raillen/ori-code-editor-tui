@@ -11,6 +11,7 @@ use oride_fs::{list_files_recursive, CreateKind, ProjectTree};
 use oride_git::{current_branch, status_map, GitFileStatus};
 use oride_keymap::{Action, Keymap, ResolvedKey};
 use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
+use oride_search::{format_hit_label, search_project, SearchHit, SearchQuery};
 use oride_syntax::{continue_list_on_enter, detect_language, HighlightEngine, LanguageId};
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
@@ -61,6 +62,15 @@ enum Overlay {
     },
     /// Find/replace compacto (barra no rodapé; estado em `App.find`).
     Find,
+    /// Busca no projeto (Ctrl+Shift+F).
+    ProjectFind {
+        query: String,
+        selected: usize,
+        case_sensitive: bool,
+        use_regex: bool,
+        hits: Vec<SearchHit>,
+        status: String,
+    },
     Diagnostics {
         selected: usize,
     },
@@ -459,6 +469,10 @@ impl App {
             }
             Overlay::Find => {
                 self.handle_find_key(key);
+                true
+            }
+            Overlay::ProjectFind { .. } => {
+                self.handle_project_find_key(key);
                 true
             }
             Overlay::Diagnostics { .. } => {
@@ -1290,6 +1304,16 @@ impl App {
                 self.overlay = Overlay::Find;
                 self.set_status(self.find.status());
             }
+            Action::ProjectFind => {
+                self.overlay = Overlay::ProjectFind {
+                    query: String::new(),
+                    selected: 0,
+                    case_sensitive: false,
+                    use_regex: false,
+                    hits: Vec::new(),
+                    status: "project find · digite · Alt+C case · Alt+R regex · Enter abre".into(),
+                };
+            }
             Action::FindNext => {
                 self.jump_find(true);
             }
@@ -1939,6 +1963,27 @@ impl App {
                 };
                 render_find_bar(frame, area, &view);
             }
+            Overlay::ProjectFind {
+                query,
+                selected,
+                hits,
+                status,
+                ..
+            } => {
+                let items: Vec<String> = hits
+                    .iter()
+                    .map(|h| format_hit_label(h, &self.workspace))
+                    .collect();
+                let title = format!("find in project ({})", status);
+                let view = PaletteView {
+                    title: &title,
+                    query,
+                    items: &items,
+                    selected: *selected,
+                    hint: "↑↓ · Enter abre · Alt+C case · Alt+R regex · Esc",
+                };
+                render_palette(frame, area, &view, &self.theme);
+            }
             Overlay::Diagnostics { selected } => {
                 let items: Vec<String> = self
                     .diagnostics
@@ -2296,6 +2341,176 @@ impl App {
             },
         ))
     }
+
+    fn handle_project_find_key(&mut self, key: KeyEvent) {
+        let Overlay::ProjectFind {
+            query,
+            selected,
+            case_sensitive,
+            use_regex,
+            hits,
+            status,
+        } = &self.overlay
+        else {
+            return;
+        };
+        let mut query = query.clone();
+        let mut selected = *selected;
+        let mut case_sensitive = *case_sensitive;
+        let mut use_regex = *use_regex;
+        let mut hits = hits.clone();
+        let mut status = status.clone();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                return;
+            }
+            KeyCode::Enter => {
+                if let Some(hit) = hits.get(selected).cloned() {
+                    self.jump_to_project_hit(hit);
+                }
+                return;
+            }
+            KeyCode::Up => selected = selected.saturating_sub(1),
+            KeyCode::Down if !hits.is_empty() => {
+                selected = (selected + 1).min(hits.len() - 1);
+            }
+            KeyCode::Char('c') if alt && !ctrl => {
+                case_sensitive = !case_sensitive;
+                self.recompute_project_find(
+                    &query,
+                    &mut hits,
+                    &mut status,
+                    case_sensitive,
+                    use_regex,
+                );
+                selected = 0;
+            }
+            KeyCode::Char('r') if alt && !ctrl => {
+                use_regex = !use_regex;
+                self.recompute_project_find(
+                    &query,
+                    &mut hits,
+                    &mut status,
+                    case_sensitive,
+                    use_regex,
+                );
+                selected = 0;
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                self.recompute_project_find(
+                    &query,
+                    &mut hits,
+                    &mut status,
+                    case_sensitive,
+                    use_regex,
+                );
+                selected = 0;
+            }
+            KeyCode::Char(c) if !ctrl && !alt && !c.is_control() => {
+                query.push(c);
+                self.recompute_project_find(
+                    &query,
+                    &mut hits,
+                    &mut status,
+                    case_sensitive,
+                    use_regex,
+                );
+                selected = 0;
+            }
+            _ => {}
+        }
+
+        if !hits.is_empty() {
+            selected = selected.min(hits.len() - 1);
+        } else {
+            selected = 0;
+        }
+        self.overlay = Overlay::ProjectFind {
+            query,
+            selected,
+            case_sensitive,
+            use_regex,
+            hits,
+            status,
+        };
+    }
+
+    fn recompute_project_find(
+        &self,
+        query: &str,
+        hits: &mut Vec<SearchHit>,
+        status: &mut String,
+        case_sensitive: bool,
+        use_regex: bool,
+    ) {
+        if query.trim().is_empty() {
+            hits.clear();
+            *status = "project find · digite · Alt+C case · Alt+R regex".into();
+            return;
+        }
+        let q = SearchQuery {
+            pattern: query.to_string(),
+            case_sensitive,
+            use_regex,
+            max_hits: 500,
+        };
+        match search_project(&self.workspace, &q) {
+            Ok(r) => {
+                *hits = r.hits;
+                let backend = match r.backend {
+                    oride_search::SearchBackend::Ripgrep => "rg",
+                    oride_search::SearchBackend::RustWalk => "rust",
+                };
+                let trunc = if r.truncated { " · truncated" } else { "" };
+                *status = format!("{} hits · {backend}{trunc}", hits.len());
+            }
+            Err(e) => {
+                hits.clear();
+                *status = format!("erro: {e}");
+            }
+        }
+    }
+
+    fn jump_to_project_hit(&mut self, hit: SearchHit) {
+        let path = if hit.path.is_absolute() {
+            hit.path.clone()
+        } else {
+            self.workspace.join(&hit.path)
+        };
+        if let Err(e) = self.store.open_path(&path) {
+            self.set_status(format!("open: {e}"));
+            return;
+        }
+        let lang = detect_language(Some(path.as_path()));
+        self.apply_language_defaults(lang);
+        self.apply_editorconfig_for_active();
+        self.lsp_open_active();
+        if let Ok(doc) = self.store.active_mut() {
+            let line = hit.line.saturating_sub(1);
+            let col = hit.column.saturating_sub(1);
+            if let Ok(off) = doc
+                .buffer()
+                .caret_to_byte(oride_core::Caret::new(line, col))
+            {
+                doc.jump_to_byte(off);
+            }
+        }
+        self.scroll_y = hit.line.saturating_sub(1);
+        self.ensure_cursor_visible();
+        self.focus = Focus::Editor;
+        self.overlay = Overlay::None;
+        self.set_status(format!(
+            "{}:{}  {}",
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
+            hit.line,
+            hit.line_text.chars().take(40).collect::<String>()
+        ));
+    }
 }
 
 fn build_default_keymap() -> Keymap {
@@ -2507,6 +2722,46 @@ mod tests {
         assert_eq!(
             app.map_key(key_ctrl(KeyCode::Char('"'))),
             Some(KeyCommand::Action(Action::ToggleTerminal))
+        );
+    }
+
+    #[test]
+    fn project_find_opens_and_lists_hits() {
+        use std::fs;
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "needle here\n").unwrap();
+        fs::write(dir.path().join("b.txt"), "other\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.open_empty();
+        let mut app =
+            App::from_store_with_config(store, Config::default(), dir.path().to_path_buf());
+        app.apply(KeyCommand::Action(Action::ProjectFind));
+        assert!(matches!(app.overlay, Overlay::ProjectFind { .. }));
+        // simula digitar "needle"
+        for c in "needle".chars() {
+            app.handle_key(KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+            });
+        }
+        if let Overlay::ProjectFind { hits, .. } = &app.overlay {
+            assert!(!hits.is_empty(), "expected hits for needle");
+            assert!(hits.iter().any(|h| h.line_text.contains("needle")));
+        } else {
+            panic!("expected ProjectFind overlay");
+        }
+        let pf = KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let app2 = App::new_empty();
+        assert_eq!(
+            app2.map_key(pf),
+            Some(KeyCommand::Action(Action::ProjectFind))
         );
     }
 

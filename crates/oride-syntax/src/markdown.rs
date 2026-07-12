@@ -1,11 +1,22 @@
-//! Highlight Markdown com grammars block + inline (tree-sitter-md).
+//! Highlight Markdown com grammars block + inline (tree-sitter-md)
+//! + **injections** de linguagem em code fences (` ```lang `).
 
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
+use crate::highlight::highlight_language_slice;
 use crate::kind::HighlightKind;
+use crate::language::LanguageId;
 use crate::HighlightSpan;
 
-/// Coleta spans de um documento Markdown (block structure + inlines).
+/// Fence com linguagem conhecida e intervalo do **conteúdo** (sem delimitadores).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FenceRegion {
+    pub language: LanguageId,
+    pub content_start: usize,
+    pub content_end: usize,
+}
+
+/// Coleta spans de um documento Markdown (block structure + inlines + fence inject).
 pub fn collect_markdown_spans(source: &str) -> Vec<HighlightSpan> {
     let mut spans = Vec::new();
     if source.is_empty() {
@@ -51,12 +62,121 @@ pub fn collect_markdown_spans(source: &str) -> Vec<HighlightSpan> {
         );
     }
 
+    // 4) P6: inject highlight da linguagem dentro de ```lang
+    for fence in extract_fenced_regions(block_tree.root_node(), source) {
+        if fence.content_start >= fence.content_end || fence.content_end > source.len() {
+            continue;
+        }
+        let slice = &source[fence.content_start..fence.content_end];
+        let injected = highlight_language_slice(fence.language, slice, fence.content_start);
+        spans.extend(injected);
+    }
+
     spans.sort_by(|a, b| {
         a.start
             .cmp(&b.start)
             .then_with(|| (a.end - a.start).cmp(&(b.end - b.start)))
     });
     spans
+}
+
+/// Extrai regiões de conteúdo de fences com linguagem mapeável.
+pub fn extract_fenced_regions(root: tree_sitter::Node, source: &str) -> Vec<FenceRegion> {
+    let mut out = Vec::new();
+    walk_fences(root, source, &mut out);
+    out
+}
+
+fn walk_fences(node: tree_sitter::Node, source: &str, out: &mut Vec<FenceRegion>) {
+    if node.kind() == "fenced_code_block" {
+        if let Some(region) = fence_region_from_node(node, source) {
+            out.push(region);
+        }
+    }
+    let mut c = node.walk();
+    for child in node.children(&mut c) {
+        walk_fences(child, source, out);
+    }
+}
+
+fn fence_region_from_node(node: tree_sitter::Node, source: &str) -> Option<FenceRegion> {
+    let mut lang_id = None;
+    let mut content_start = None;
+    let mut content_end = None;
+    let mut c = node.walk();
+    for child in node.children(&mut c) {
+        match child.kind() {
+            "info_string" | "language" => {
+                let t = child.utf8_text(source.as_bytes()).ok()?.trim();
+                // info_string pode ser "rust" ou "rust title"
+                let first = t.split_whitespace().next().unwrap_or(t);
+                lang_id = fence_lang_alias(first);
+            }
+            "code_fence_content" => {
+                content_start = Some(child.start_byte());
+                content_end = Some(child.end_byte().min(source.len()));
+            }
+            _ => {}
+        }
+    }
+    // Fallback: se não achou nó content, tenta heurística entre delimitadores
+    if content_start.is_none() {
+        if let Some((s, e)) = heuristic_fence_content(node, source) {
+            content_start = Some(s);
+            content_end = Some(e);
+        }
+    }
+    let language = lang_id?;
+    let content_start = content_start?;
+    let content_end = content_end?;
+    if content_start >= content_end {
+        return None;
+    }
+    Some(FenceRegion {
+        language,
+        content_start,
+        content_end,
+    })
+}
+
+fn heuristic_fence_content(node: tree_sitter::Node, source: &str) -> Option<(usize, usize)> {
+    // entre primeira e última linha do bloco, sem a linha de abertura/fechamento
+    let text = node.utf8_text(source.as_bytes()).ok()?;
+    let start = node.start_byte();
+    let mut lines = text.split_inclusive('\n');
+    let first = lines.next()?;
+    let rest: String = lines.collect();
+    if rest.is_empty() {
+        return None;
+    }
+    // remove última linha se for só ```
+    let rest = rest.trim_end_matches('\n');
+    let rest = if rest.ends_with("```") {
+        rest.trim_end_matches("```").trim_end_matches('\n')
+    } else {
+        rest
+    };
+    let inner_start = start + first.len();
+    let inner_end = inner_start + rest.len();
+    if inner_start < inner_end && inner_end <= source.len() {
+        Some((inner_start, inner_end))
+    } else {
+        None
+    }
+}
+
+/// Mapeia alias do info string → LanguageId suportado no Oride.
+#[must_use]
+pub fn fence_lang_alias(name: &str) -> Option<LanguageId> {
+    let n = name.trim().to_ascii_lowercase();
+    match n.as_str() {
+        "oris" | "oriscript" | "ori" => Some(LanguageId::OriScript),
+        "js" | "javascript" | "jsx" | "mjs" | "cjs" => Some(LanguageId::JavaScript),
+        "html" | "htm" => Some(LanguageId::Html),
+        "css" | "scss" => Some(LanguageId::Css),
+        // rust e outros sem grammar no binário: None (fica só paint de code block)
+        _ => None,
+    }
 }
 
 fn query_spans(
@@ -302,5 +422,43 @@ mod tests {
         assert_eq!(continue_list_on_enter("- "), None);
         assert_eq!(continue_list_on_enter("1. first"), Some("2. ".into()));
         assert_eq!(continue_list_on_enter("- [x] done"), Some("- [ ] ".into()));
+    }
+}
+
+#[cfg(test)]
+mod injection_tests {
+    use super::*;
+    use crate::HighlightKind;
+
+    #[test]
+    fn injects_oriscript_keywords_inside_fence() {
+        let src = "```oris
+fn main() {}
+```
+";
+        let spans = collect_markdown_spans(src);
+        // conteúdo do fence deve ter spans de identificador/var (injection),
+        // não só o paint genérico "Code" do MD
+        let content = spans.iter().any(|s| {
+            s.start >= 8
+                && matches!(
+                    s.kind,
+                    HighlightKind::Variable
+                        | HighlightKind::Keyword
+                        | HighlightKind::Function
+                        | HighlightKind::Punctuation
+                )
+        });
+        assert!(
+            content,
+            "expected injected language spans inside fence, spans={spans:?}"
+        );
+    }
+
+    #[test]
+    fn fence_alias_oris() {
+        assert_eq!(fence_lang_alias("oriscript"), Some(LanguageId::OriScript));
+        assert_eq!(fence_lang_alias("js"), Some(LanguageId::JavaScript));
+        assert_eq!(fence_lang_alias("python"), None);
     }
 }

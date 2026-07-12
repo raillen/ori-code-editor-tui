@@ -18,6 +18,9 @@ Pipeline **tree-sitter-md**:
 1. Grammar **block** (headings, listas, code fences, tables, quotes)
 2. Grammar **inline** (bold, italic, links, `code` spans)
 3. Queries oficiais + fallback por `node.kind()`
+4. **Injections (P6):** conteúdo de ` ```lang ` re-highlight com grammar da linguagem
+
+Aliases de fence suportados: `oris` / `oriscript`, `js` / `javascript`, `html`, `css` (e sinônimos em `fence_lang_alias`).
 
 Cores dedicadas: heading, emphasis, strong, link, code, list marker, quote.
 

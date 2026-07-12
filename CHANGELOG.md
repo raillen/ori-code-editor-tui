@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added (P5)
+
+- **Find in project** (`Ctrl+Shift+F`): crate `oride-search` com backend `rg` + fallback Rust (`ignore`)
+- Lista de hits com Enter → abre arquivo e posiciona caret
+- Opções `Alt+C` case · `Alt+R` regex no project find
+- `ctrl+shift+d` = nova pasta na árvore (antes `ctrl+shift+f`, liberado para project find)
+
+### Added (P6)
+
+- **Language injections** em fences Markdown: ` ```oris `/`js`/`html`/`css` com highlight da grammar correspondente
+
 ## 0.1.0-alpha.5
 
 ### Added (P4 final)

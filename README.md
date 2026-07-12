@@ -56,7 +56,8 @@ cargo build --release
 | `Ctrl+Shift+I` / `Ctrl+Shift+M` | LSP format / diagnostics panel |
 | `Alt+=` / `Alt+-` | Terminal taller / shorter |
 | `Ctrl+R` | Reload file from disk |
-| Find `Alt+R` | Toggle regex search |
+| `Ctrl+Shift+F` | **Find in project** (rg ou fallback Rust) |
+| Find `Alt+R` | Toggle regex search (buffer e projeto) |
 | `Ctrl+F` / `F3` | Find bar (footer) / next |
 | `Ctrl+H` | Replace (same bar) |
 | `Alt+C` / `Alt+A` | Toggle case / ignore accents (in find) |
