@@ -8,6 +8,12 @@
 - **Modal Find/Replace redesenhado**: campos separados, 1 opção por linha com atalho, contagem isolada (menos “amontoado”)
 - Labels do modal mais claros: case / accent / word / re
 
+### Added (markdown preview)
+
+- **Placeholder de imagem** `![alt](path)`: card com alt, path e status (local ✓/✗ ou URL remota)
+- Paths de imagem relativos à pasta do `.md` aberto
+- Preview texto mais rico: task lists, tabelas, setext headings, frontmatter, `~~strike~~`, `__bold__`, autolink, links `→ url`
+
 ### Fixed
 
 - **Preview Markdown** segue o scroll do editor (não fica preso no topo); `Alt+↑/↓` só faz ajuste fino

@@ -100,5 +100,21 @@ fn map_style(style: PreviewStyle, theme: &UiTheme) -> Style {
         PreviewStyle::FenceLang => Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
+        PreviewStyle::Image => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+        PreviewStyle::ImageAlt => Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::ITALIC),
+        PreviewStyle::ImagePath => Style::default().fg(theme.syntax.link),
+        PreviewStyle::ImageOk => Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+        PreviewStyle::ImageMissing => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        PreviewStyle::Table => Style::default().fg(Color::Cyan),
+        PreviewStyle::Strike => Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM),
+        PreviewStyle::Dim => Style::default().fg(Color::DarkGray),
     }
 }

@@ -35,22 +35,62 @@ Cores dedicadas: heading, emphasis, strong, link, code, list marker, quote.
 
 Também na command palette: **Toggle soft wrap**, **Toggle comment**.
 
+## Preview Markdown (TUI)
+
+Atalho: `Ctrl+Shift+V` / `Alt+P`. Painel read-only ao lado do editor; **segue o scroll**.
+
+### O que renderiza (texto)
+
+| Elemento | No preview |
+|----------|------------|
+| Headings `#` / setext | Hierarquia visual + espaço |
+| Listas / task lists | `•` · `☐` / `☑` |
+| Blockquote | `│` + itálico/quote |
+| Code fence | Bloco `┌ lang` … `│` … `└` |
+| Inline `code` **bold** *italic* ~~strike~~ | Estilos dedicados |
+| Links `[t](url)` | `t → url` (url truncada) |
+| Tabelas `\|` | Linhas com `│` |
+| Frontmatter `---` | Bloco dim no topo |
+| **Imagens** `![alt](path)` | **Placeholder** (não bitmap) |
+
+### Imagens (placeholder)
+
+Linha só com imagem vira card:
+
+```text
+┌ 🖼  imagem
+│  alt text
+│  /path/relativo.png
+│  ✓ arquivo local encontrado   (ou ✗ / URL remota)
+└
+```
+
+- Paths relativos resolvem contra a **pasta do `.md` aberto**
+- `http(s)://` → nota “URL remota · não embutida”
+- Inline no meio do parágrafo → chip compacto `🖼 alt`
+
+**Não** desenha PNG/JPEG no terminal (limitação TUI). Viewer externo = futuro opcional.
+
 ## Limitações atuais
 
-- Soft wrap: scroll ainda é por linha lógica
+- Soft wrap: scroll vertical usa linhas lógicas + altura visual
+- Preview de imagem = placeholder, não pixels
+- Tabelas sem alinhamento de colunas avançado
 
 ## Futuro (plano pós-0.1)
 
-Decisões e fatias: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)** (P6 injections, P7 preview ANSI).
+Decisões e fatias: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)**.
 
-| Item | Descrição | Fatia |
+| Item | Descrição | Status |
 |------|-----------|--------|
-| **Highlight em code fences** | Injection: ` ```oris `/`js`/… com grammar da linguagem | **P6** |
-| **Preview Markdown ANSI** | Painel TUI read-only (`Ctrl+Shift+V` / `Alt+P`) | **P7 feito** |
-| **Parse JSX real no MDX** | Além do highlight MD genérico | depois de P6/P7 |
-| Preview HTML/browser | Opcional; não prioritário | major futura |
+| Highlight em code fences | Injection oris/js/… | feito (P6) |
+| Preview Markdown ANSI | Painel TUI | feito + placeholders |
+| Abrir imagem no viewer do SO | `xdg-open` no path | futuro |
+| Protocolo Kitty/Sixel | imagem no terminal | opcional / frágil |
+| Preview HTML/browser | imagens reais | major futura |
+| Parse JSX no MDX | além do MD genérico | futuro |
 
-Outros desejáveis: wiki-links, frontmatter YAML, outline de headings na palette.
+Outros desejáveis: wiki-links, outline de headings na palette.
 
 ## Validação
 

@@ -14,7 +14,7 @@ use oride_lsp::{Diagnostic, LspClient, LspEvent, Position as LspPos};
 use oride_plugin::{builtin_host, PluginCtx, PluginHook, PluginHost};
 use oride_search::{format_hit_label, search_project, SearchHit, SearchQuery};
 use oride_syntax::{
-    continue_list_on_enter, detect_language, render_preview_lines, HighlightEngine, LanguageId,
+    continue_list_on_enter, detect_language, render_preview_lines_in, HighlightEngine, LanguageId,
 };
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
@@ -3092,9 +3092,13 @@ impl App {
         }
 
         if let Some(prev_area) = preview_area {
-            let lines = render_preview_lines(&source);
-            // Preview segue o scroll do editor (1 linha fonte ≈ 1 linha preview).
-            // preview_scroll = offset fino (Alt+↑/↓) em cima do scroll_y.
+            let base_dir = self
+                .store
+                .active()
+                .ok()
+                .and_then(|d| d.path().and_then(|p| p.parent().map(Path::to_path_buf)));
+            let lines = render_preview_lines_in(&source, base_dir.as_deref());
+            // Cards de imagem expandem linhas; segue scroll do editor + offset fino.
             let max_scroll = lines.len().saturating_sub(1);
             let base = self.scroll_y.min(max_scroll);
             let scroll = base.saturating_add(self.preview_scroll).min(max_scroll);
@@ -3105,7 +3109,7 @@ impl App {
                 .and_then(|d| d.caret().ok())
                 .map(|c| c.line + 1)
                 .unwrap_or(0);
-            let title = format!("preview · editor L{caret_line} · Alt+↑/↓ fine · Alt+P fecha");
+            let title = format!("preview · L{caret_line} · 🖼=placeholder · Alt+↑/↓ · Alt+P");
             let view = MdPreviewView {
                 title: &title,
                 lines: &lines,

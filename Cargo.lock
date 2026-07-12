@@ -959,6 +959,7 @@ dependencies = [
 name = "oride-syntax"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "tempfile",
  "thiserror 2.0.18",
  "tree-sitter",
  "tree-sitter-css",
