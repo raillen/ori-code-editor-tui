@@ -64,7 +64,7 @@ cargo build --release
 | `Alt+=` / `Alt+-` | Terminal taller / shorter |
 | `Ctrl+R` | Reload file from disk |
 | `Ctrl+Shift+F` | **Find in project** (rg ou fallback Rust) |
-| `Ctrl+Shift+V` / `Alt+P` | **Markdown preview** (painel TUI) |
+| `Ctrl+Shift+V` / `Alt+P` | **Markdown preview** (segue scroll do editor · `Alt+↑/↓` fine) |
 | `Ctrl+Alt+V` / `H` | Split editor vertical / horizontal |
 | `F6` / `Ctrl+Alt+W` | Next pane / close pane |
 | `Ctrl+Alt+↑/↓` / `U` | Multi-cursor add / clear |

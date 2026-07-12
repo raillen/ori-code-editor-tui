@@ -18,10 +18,10 @@ use oride_syntax::{
 };
 use oride_terminal::EmbeddedTerminal;
 use oride_ui::{
-    render_context_banner, render_editor, render_md_preview, render_menu_bar, render_menu_dropdown,
-    render_mini_modal, render_palette, render_scm_panel, render_status, render_tabs,
-    render_terminal_panel, render_tree, render_which_key, EditorView, MdPreviewView, MiniModalView,
-    PaletteView, ScmItem, StatusModel, TreeView, UiTheme,
+    render_context_banner, render_editor, render_find_modal, render_md_preview, render_menu_bar,
+    render_menu_dropdown, render_mini_modal, render_palette, render_scm_panel, render_status,
+    render_tabs, render_terminal_panel, render_tree, render_which_key, EditorView, FindModalView,
+    MdPreviewView, MiniModalView, PaletteView, ScmItem, StatusModel, TreeView, UiTheme,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::Frame;
@@ -517,7 +517,7 @@ impl App {
         if self.handle_overlay_key(key) {
             return;
         }
-        // Preview MD: Alt+PgUp/PgDn rola o painel
+        // Preview MD: Alt+↑/↓ ajusta offset fino em cima do scroll do editor
         if self.show_md_preview
             && key.modifiers.contains(KeyModifiers::ALT)
             && matches!(
@@ -527,6 +527,8 @@ impl App {
         {
             match key.code {
                 KeyCode::PageUp | KeyCode::Up => {
+                    // offset pode ser "negativo" via saturating: usamos i32 interno?
+                    // mantém usize: Alt+Up reduz offset; se 0, não sobe além do editor
                     self.preview_scroll = self.preview_scroll.saturating_sub(3);
                 }
                 KeyCode::PageDown | KeyCode::Down => {
@@ -1910,7 +1912,7 @@ impl App {
                     self.show_md_preview = !self.show_md_preview;
                     self.preview_scroll = 0;
                     self.set_status(if self.show_md_preview {
-                        "md preview: on · Alt+P / Ctrl+Shift+V · PgUp/PgDn no painel (foco editor)"
+                        "md preview: on · segue scroll do editor · Alt+↑/↓ fine · Alt+P fecha"
                     } else {
                         "md preview: off"
                     });
@@ -2787,23 +2789,20 @@ impl App {
                 render_palette(frame, area, &view, &self.theme);
             }
             Overlay::Find => {
-                // mini-modal centrado (U4)
-                let status = self.find.status();
-                let options = self.find.options_label();
-                let q_mark = if self.find.focus_replace { " " } else { "▌" };
-                let r_mark = if self.find.focus_replace { "▌" } else { " " };
-                let mut lines = vec![format!("Find: {}{}", self.find.query, q_mark)];
-                if self.find.show_replace {
-                    lines.push(format!("Repl: {}{}", self.find.replace, r_mark));
-                }
-                lines.push(status);
-                lines.push(options);
-                let view = MiniModalView {
-                    title: "Find / Replace",
-                    lines: &lines,
-                    selected: if self.find.focus_replace { 1 } else { 0 },
+                let match_label = self.find.match_label();
+                let view = FindModalView {
+                    query: &self.find.query,
+                    replace: &self.find.replace,
+                    show_replace: self.find.show_replace,
+                    focus_replace: self.find.focus_replace,
+                    match_label: &match_label,
+                    case_sensitive: self.find.case_sensitive,
+                    ignore_accents: self.find.ignore_accents,
+                    whole_word: self.find.whole_word,
+                    use_regex: self.find.use_regex,
+                    error: self.find.regex_error.as_deref(),
                 };
-                render_mini_modal(frame, area, &view, &self.theme);
+                render_find_modal(frame, area, &view);
             }
             Overlay::ProjectFind {
                 query,
@@ -3053,13 +3052,23 @@ impl App {
 
         if let Some(prev_area) = preview_area {
             let lines = render_preview_lines(&source);
-            if self.preview_scroll >= lines.len() && !lines.is_empty() {
-                self.preview_scroll = lines.len() - 1;
-            }
+            // Preview segue o scroll do editor (1 linha fonte ≈ 1 linha preview).
+            // preview_scroll = offset fino (Alt+↑/↓) em cima do scroll_y.
+            let max_scroll = lines.len().saturating_sub(1);
+            let base = self.scroll_y.min(max_scroll);
+            let scroll = base.saturating_add(self.preview_scroll).min(max_scroll);
+            let caret_line = self
+                .store
+                .active()
+                .ok()
+                .and_then(|d| d.caret().ok())
+                .map(|c| c.line + 1)
+                .unwrap_or(0);
+            let title = format!("preview · editor L{caret_line} · Alt+↑/↓ fine · Alt+P fecha");
             let view = MdPreviewView {
-                title: "preview md · Alt+P",
+                title: &title,
                 lines: &lines,
-                scroll: self.preview_scroll,
+                scroll,
             };
             render_md_preview(frame, prev_area, &view, &self.theme);
         }

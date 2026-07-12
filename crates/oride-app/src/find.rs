@@ -115,38 +115,35 @@ impl FindState {
         self.use_regex = !self.use_regex;
     }
 
+    /// Contagem curta para o modal (sem amontoar flags).
     #[must_use]
-    pub fn status(&self) -> String {
-        let flags = format!(
-            "case:{} accent:{} word:{} re:{}",
-            if self.case_sensitive { "on" } else { "off" },
-            if self.ignore_accents { "ign" } else { "exact" },
-            if self.whole_word { "on" } else { "off" },
-            if self.use_regex { "on" } else { "off" }
-        );
-        if let Some(err) = &self.regex_error {
-            return format!("find regex error: {err}");
-        }
+    pub fn match_label(&self) -> String {
         if self.query.is_empty() {
-            return format!(
-                "find · {flags} · Alt+C case · Alt+A acentos · Alt+W palavra · Alt+R regex · Ctrl+H replace"
-            );
+            return "digite para buscar".into();
         }
         if self.matches.is_empty() {
-            return format!("find: \"{}\" — 0 · {flags}", self.query);
+            return "0 matches".into();
         }
-        format!(
-            "find: \"{}\" — {}/{} · {flags}",
-            self.query,
-            self.current + 1,
-            self.matches.len()
-        )
+        format!("{} / {} matches", self.current + 1, self.matches.len())
     }
 
+    /// Mensagem curta para a status bar (não o modal).
+    #[must_use]
+    pub fn status(&self) -> String {
+        if let Some(err) = &self.regex_error {
+            return format!("find: regex error — {err}");
+        }
+        if self.query.is_empty() {
+            return "find · Alt+C/A/W/R opções · Esc fecha".into();
+        }
+        self.match_label()
+    }
+
+    /// Snapshot compacto das flags (testes / debug).
     #[must_use]
     pub fn options_label(&self) -> String {
         format!(
-            "[{}]case [{}]accent-ign [{}]word [{}]re · Alt+C/A/W/R · Enter next · Alt+Enter repl · Esc",
+            "[{}]case [{}]accent [{}]word [{}]re",
             if self.case_sensitive { "x" } else { " " },
             if self.ignore_accents { "x" } else { " " },
             if self.whole_word { "x" } else { " " },
@@ -352,6 +349,20 @@ mod tests {
     fn whole_word_off_matches_substrings() {
         let ranges = find_all("GUI UI", "UI", true, false);
         assert_eq!(ranges.len(), 2); // G[UI] e [UI]
+    }
+
+    #[test]
+    fn match_label_and_options() {
+        let mut f = FindState {
+            query: "x".into(),
+            ..Default::default()
+        };
+        f.recompute("x x y");
+        assert!(f.match_label().contains("2 matches") || f.match_label().contains("/ 2"));
+        assert!(f.options_label().contains("case"));
+        f.whole_word = true;
+        f.toggle_whole_word();
+        assert!(!f.whole_word);
     }
 
     #[test]

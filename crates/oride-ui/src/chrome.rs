@@ -189,7 +189,7 @@ pub fn render_which_key(frame: &mut Frame, area: Rect, title: &str, rows: &[(Str
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-// ── Mini modal (find) ───────────────────────────────────────────
+// ── Mini modal genérico ─────────────────────────────────────────
 
 pub struct MiniModalView<'a> {
     pub title: &'a str,
@@ -240,6 +240,164 @@ pub fn render_mini_modal(
         )));
     }
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+// ── Find / Replace modal (layout espaçado, legível) ─────────────
+
+pub struct FindModalView<'a> {
+    pub query: &'a str,
+    pub replace: &'a str,
+    pub show_replace: bool,
+    pub focus_replace: bool,
+    /// Ex.: "3 / 12" ou "0 matches" ou "digite para buscar"
+    pub match_label: &'a str,
+    pub case_sensitive: bool,
+    pub ignore_accents: bool,
+    pub whole_word: bool,
+    pub use_regex: bool,
+    pub error: Option<&'a str>,
+}
+
+pub fn render_find_modal(frame: &mut Frame, area: Rect, view: &FindModalView<'_>) {
+    let width = (area.width * 3 / 4)
+        .clamp(48, 72)
+        .min(area.width.saturating_sub(2));
+    // campos + blank + matches + blank + 4 opções + blank + 3 hints
+    let content_rows: u16 = if view.show_replace { 14 } else { 13 };
+    let height = (content_rows + 2)
+        .min(area.height.saturating_sub(2))
+        .max(12);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 4;
+    let rect = Rect::new(x, y, width, height);
+    frame.render_widget(Clear, rect);
+
+    let block = Block::default()
+        .title(" Find / Replace ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(Color::Black).fg(Color::White));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let w = inner.width as usize;
+    let dim = Style::default().fg(Color::DarkGray).bg(Color::Black);
+    let normal = Style::default().fg(Color::White).bg(Color::Black);
+    let focus = Style::default()
+        .fg(Color::Black)
+        .bg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let ok = Style::default().fg(Color::Green).bg(Color::Black);
+    let err = Style::default()
+        .fg(Color::Black)
+        .bg(Color::Red)
+        .add_modifier(Modifier::BOLD);
+    let key = Style::default().fg(Color::Cyan).bg(Color::Black);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Campo Find
+    let q_st = if view.focus_replace { normal } else { focus };
+    let q_cursor = if view.focus_replace { "" } else { "▌" };
+    lines.push(Line::from(vec![
+        Span::styled(pad_row("  Find", 10), dim),
+        Span::styled(
+            pad_row(
+                &format!(" {}{} ", view.query, q_cursor),
+                w.saturating_sub(10),
+            ),
+            q_st,
+        ),
+    ]));
+
+    // Campo Replace (opcional)
+    if view.show_replace {
+        let r_st = if view.focus_replace { focus } else { normal };
+        let r_cursor = if view.focus_replace { "▌" } else { "" };
+        lines.push(Line::from(vec![
+            Span::styled(pad_row("  Replace", 10), dim),
+            Span::styled(
+                pad_row(
+                    &format!(" {}{} ", view.replace, r_cursor),
+                    w.saturating_sub(10),
+                ),
+                r_st,
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(Span::styled(
+            pad_row("  (Ctrl+H ou Tab → campo Replace)", w),
+            dim,
+        )));
+    }
+
+    lines.push(Line::from(Span::styled(pad_row("", w), normal)));
+
+    // Contagem de matches (linha própria, destaque)
+    if let Some(e) = view.error {
+        lines.push(Line::from(Span::styled(
+            pad_row(&format!("  ! {e}"), w),
+            err,
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            pad_row(&format!("  {}", view.match_label), w),
+            ok,
+        )));
+    }
+
+    lines.push(Line::from(Span::styled(pad_row("", w), normal)));
+    lines.push(Line::from(Span::styled(
+        pad_row("  Opções  (atalho liga/desliga)", w),
+        dim,
+    )));
+
+    // Uma opção por linha: [x] rótulo … atalho
+    for (on, label, shortcut) in [
+        (view.case_sensitive, "Case sensitive", "Alt+C"),
+        (view.ignore_accents, "Ignorar acentos (á≈a)", "Alt+A"),
+        (view.whole_word, "Palavra completa", "Alt+W"),
+        (view.use_regex, "Regex", "Alt+R"),
+    ] {
+        let mark = if on { "[x]" } else { "[ ]" };
+        let mark_st = if on {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            dim
+        };
+        let left = format!("  {mark}  {label}");
+        let left_w = left.chars().count();
+        let right = shortcut;
+        let right_w = right.chars().count();
+        let gap = w.saturating_sub(left_w + right_w).max(1);
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {mark}"), mark_st),
+            Span::styled(format!("  {label}"), normal),
+            Span::styled(" ".repeat(gap.saturating_sub(2)), normal),
+            Span::styled(right.to_string(), key),
+        ]));
+    }
+
+    lines.push(Line::from(Span::styled(pad_row("", w), normal)));
+    lines.push(Line::from(Span::styled(
+        pad_row("  Enter next · F3 / Shift+F3 · Tab campo", w),
+        dim,
+    )));
+    lines.push(Line::from(Span::styled(
+        pad_row("  Alt+Enter replace 1 · Ctrl+Alt+Enter all · Esc", w),
+        dim,
+    )));
+
+    // Ajusta altura real ao número de linhas
+    let show_n = (inner.height as usize).min(lines.len());
+    frame.render_widget(Paragraph::new(lines[..show_n].to_vec()), inner);
 }
 
 // ── SCM list panel ──────────────────────────────────────────────

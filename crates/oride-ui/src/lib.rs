@@ -12,8 +12,9 @@ mod theme;
 mod tree;
 
 pub use chrome::{
-    render_context_banner, render_menu_bar, render_menu_dropdown, render_mini_modal,
-    render_scm_panel, render_which_key, MenuColumn, MenuItem, MiniModalView, ScmItem,
+    render_context_banner, render_find_modal, render_menu_bar, render_menu_dropdown,
+    render_mini_modal, render_scm_panel, render_which_key, FindModalView, MenuColumn, MenuItem,
+    MiniModalView, ScmItem,
 };
 pub use color::{parse_color, ColorParseError};
 pub use editor::{render_editor, EditorView};

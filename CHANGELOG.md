@@ -5,7 +5,12 @@
 ### Added (find)
 
 - **Palavra completa** no find/replace (`Alt+W`): não casa substring dentro de identificador (ex.: `UI` em `GUI`)
-- Labels do modal mais claros: case / accent-ign / word / re
+- **Modal Find/Replace redesenhado**: campos separados, 1 opção por linha com atalho, contagem isolada (menos “amontoado”)
+- Labels do modal mais claros: case / accent / word / re
+
+### Fixed
+
+- **Preview Markdown** segue o scroll do editor (não fica preso no topo); `Alt+↑/↓` só faz ajuste fino
 
 ### Added (UX polish — tiers S+A)
 
