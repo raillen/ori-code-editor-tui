@@ -1,6 +1,6 @@
 //! Restaura o terminal ao sair (raw mode + alternate screen).
 
-use std::io::{self, Stdout};
+use std::io::{self, Stdout, Write};
 
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags,
@@ -17,13 +17,18 @@ use ratatui::Terminal;
 pub struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     keyboard_enhanced: bool,
+    mouse_captured: bool,
 }
 
 impl TerminalGuard {
-    pub fn enter() -> anyhow::Result<Self> {
+    /// `enable_mouse`: se true, captura mouse no enter (default do produto: false).
+    pub fn enter(enable_mouse: bool) -> anyhow::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout, EnterAlternateScreen)?;
+        if enable_mouse {
+            execute!(stdout, EnableMouseCapture)?;
+        }
 
         // Kitty/WezTerm/Foot/Ghostty: reporta Ctrl+Shift+letra corretamente.
         // Sem isso, Ctrl+Shift+S vira Ctrl+S e o Save As nunca dispara.
@@ -54,11 +59,27 @@ impl TerminalGuard {
         Ok(Self {
             terminal,
             keyboard_enhanced,
+            mouse_captured: enable_mouse,
         })
     }
 
     pub fn terminal(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
         &mut self.terminal
+    }
+
+    /// Liga/desliga captura de mouse em runtime (menu / config).
+    pub fn set_mouse_capture(&mut self, enabled: bool) {
+        if enabled == self.mouse_captured {
+            return;
+        }
+        let backend = self.terminal.backend_mut();
+        if enabled {
+            let _ = execute!(backend, EnableMouseCapture);
+        } else {
+            let _ = execute!(backend, DisableMouseCapture);
+        }
+        let _ = backend.flush();
+        self.mouse_captured = enabled;
     }
 }
 
@@ -68,11 +89,10 @@ impl Drop for TerminalGuard {
             let _ = execute!(self.terminal.backend_mut(), PopKeyboardEnhancementFlags);
         }
         let _ = disable_raw_mode();
-        let _ = execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        );
+        if self.mouse_captured {
+            let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
+        }
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
     }
 }

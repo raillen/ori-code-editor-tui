@@ -170,7 +170,7 @@ impl Action {
             Self::MacroPlay => "Macro: play",
             Self::MultiPicker => "Multi picker (files/cmds/buffers)",
             Self::UndoTree => "Undo history…",
-            Self::ToggleMouse => "Toggle mouse",
+            Self::ToggleMouse => "Enable / disable mouse",
         }
     }
 

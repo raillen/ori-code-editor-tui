@@ -5,6 +5,9 @@
 
 theme = "default"
 show_line_numbers = true
+# Mouse: off por default (não captura o terminal). true = clique/drag/scroll no editor.
+# Também: menu View → Enable / disable mouse, ou command palette.
+mouse = false
 
 [editor]
 tab_size = 4

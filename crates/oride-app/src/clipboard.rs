@@ -30,6 +30,12 @@ pub fn paste_text() -> String {
             }
         }
     }
+    internal_text()
+}
+
+/// Só o buffer interno (testes / fallback sem X11).
+#[must_use]
+pub fn internal_text() -> String {
     INTERNAL.lock().map(|g| g.clone()).unwrap_or_default()
 }
 

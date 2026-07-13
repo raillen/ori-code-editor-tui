@@ -87,7 +87,7 @@ cargo build --release
 **Terminal:** shell interativo com foco no painel · `Ctrl+C` vai pro shell · `Esc` → editor · `Ctrl+"` fecha.  
 **SCM:** lista working tree dirty (não é 2ª project tree).  
 **Icons:** Nerd Font glyphs (ASCII fallback exists in code).  
-**Mouse (default on):** clique = caret · drag = seleção · duplo = palavra · scroll por painel · botão direito = which-key. Desligar: `mouse = false` no TOML.
+**Mouse (default off):** ativar com `mouse = true` no TOML ou **View → Enable / disable mouse** (palette). Com on: clique = caret · drag = seleção · duplo = palavra · scroll por painel.
 
 ### Tier B (MVP)
 

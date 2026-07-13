@@ -16,9 +16,14 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
         None => App::new_empty_or_session(),
     };
 
-    let mut guard = TerminalGuard::enter().context("enter terminal raw mode")?;
+    // Mouse off por default; só captura se config/menu ligar.
+    let mut guard =
+        TerminalGuard::enter(app.mouse_is_enabled()).context("enter terminal raw mode")?;
 
     loop {
+        // Sincroniza capture se o usuário toggou pelo menu/palette
+        guard.set_mouse_capture(app.mouse_is_enabled());
+
         guard.terminal().draw(|frame| app.draw(frame))?;
 
         if app.should_quit {
@@ -43,15 +48,17 @@ pub fn run(path: Option<PathBuf>) -> anyhow::Result<()> {
         loop {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    // flush drag pendente antes de tecla
                     if let Some(d) = last_drag.take() {
                         app.handle_mouse(d);
                     }
                     app.handle_key(key);
                 }
                 Event::Mouse(me) => {
+                    // Sem mouse enabled, ignora (capture deve estar off; defesa em profundidade)
+                    if !app.mouse_is_enabled() {
+                        continue;
+                    }
                     if matches!(me.kind, MouseEventKind::Drag(_)) {
-                        // mantém só o último drag da rajada
                         last_drag = Some(me);
                     } else {
                         if let Some(d) = last_drag.take() {

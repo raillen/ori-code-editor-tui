@@ -49,6 +49,7 @@ pub fn default_menus() -> Vec<MenuColumn> {
                 item("Split vertical", "ctrl+alt+v", "split_vertical"),
                 item("Split horizontal", "ctrl+alt+h", "split_horizontal"),
                 item("Which-key", "alt+/", "which_key"),
+                item("Enable / disable mouse", "palette", "toggle_mouse"),
             ],
         },
         MenuColumn {
@@ -88,7 +89,6 @@ pub fn default_menus() -> Vec<MenuColumn> {
                 item("Macro record/stop", "f9", "macro_toggle_record"),
                 item("Macro play", "f10", "macro_play"),
                 item("Undo history…", "ctrl+shift+u", "undo_tree"),
-                item("Toggle mouse", "", "toggle_mouse"),
                 item("Word count", "", "plugin:word_count"),
             ],
         },

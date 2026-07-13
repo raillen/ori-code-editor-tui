@@ -14,6 +14,7 @@ Exemplo completo: [`assets/config.example.toml`](../assets/config.example.toml).
 |-------|------|---------|--------|
 | `theme` | string | `"default"` | Nome lógico (cores em `[ui]`) |
 | `show_line_numbers` | bool | `true` | Gutter |
+| `mouse` | bool | **`false`** | Captura de mouse (clique/drag/scroll). Off por default; também **View → Enable mouse** ou palette |
 | `[editor].tab_size` | u8 | `4` | Largura do Tab com espaços |
 | `[editor].insert_spaces` | bool | `true` | Tab → espaços |
 | `[ui].*` | cor | ver defaults | Tema TUI |

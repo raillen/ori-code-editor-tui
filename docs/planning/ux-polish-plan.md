@@ -64,7 +64,8 @@
 | Duplo/triplo clique | **feito** (palavra/linha) |
 | Clique árvore/abas/terminal/SCM/menu | **feito** |
 | Scroll wheel por painel | **feito** |
-| Config `mouse = true/false` | **feito** |
+| Config `mouse = true/false` | **feito** (default **false**) |
+| Menu View / palette toggle | **feito** |
 
 ---
 
@@ -176,4 +177,4 @@ U1 banner + status ────────────────────�
 - [x] Drag = seleção  
 - [x] Clique painéis = foco  
 - [x] Scroll wheel  
-- [x] Docs + `mouse = true` (default)  
+- [x] Docs + `mouse = false` (default); ativar TOML ou menu View

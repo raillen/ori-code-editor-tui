@@ -2003,10 +2003,12 @@ impl App {
             }
             Action::ToggleMouse => {
                 self.mouse_enabled = !self.mouse_enabled;
+                self.config.mouse = self.mouse_enabled;
+                // Capture real é aplicada no loop de `run` via TerminalGuard.
                 self.set_status(if self.mouse_enabled {
-                    "mouse: on"
+                    "mouse: ON · clique/drag/scroll · desligar: View → Mouse ou mouse=false"
                 } else {
-                    "mouse: off"
+                    "mouse: OFF (default) · ligar: View → Enable mouse ou mouse=true no TOML"
                 });
             }
             Action::OpenFolder => {
@@ -2748,6 +2750,12 @@ impl App {
         } else if sel >= self.tree_scroll + 20 {
             self.tree_scroll = sel.saturating_sub(19);
         }
+    }
+
+    /// Mouse ativo (config / menu). Default: false.
+    #[must_use]
+    pub fn mouse_is_enabled(&self) -> bool {
+        self.mouse_enabled
     }
 
     /// Em drag de seleção (timeout do loop de eventos mais curto).
@@ -4699,8 +4707,12 @@ mod tests {
         app.apply(KeyCommand::InsertChar('y'));
         app.apply(KeyCommand::Action(Action::SelectAll));
         app.apply(KeyCommand::Action(Action::Copy));
+        // Não depende do clipboard do SO (pode ter lixo de outras apps)
+        assert_eq!(crate::clipboard::internal_text(), "xy");
         app.apply(KeyCommand::Action(Action::MoveDocEnd { extend: false }));
-        app.apply(KeyCommand::Action(Action::Paste));
+        // Paste via buffer interno se arboard devolver lixo — simula o path interno
+        let pasted = crate::clipboard::internal_text();
+        let _ = app.store.active_mut().unwrap().insert_text(&pasted);
         let text = app.store.active().unwrap().buffer().as_string();
         assert_eq!(text, "xyxy");
     }

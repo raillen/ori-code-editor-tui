@@ -4,11 +4,12 @@
 
 ### Added (mouse + tier B)
 
-- **Mouse completo** (default on, `mouse = false` no TOML desliga):
+- **Mouse completo** (**default off** — ativar com `mouse = true` no TOML ou **View → Enable mouse** / palette):
   - Clique editor → caret; drag → seleção; duplo → palavra; triplo → linha
   - Clique árvore/abas/SCM/terminal/menu → foco / ativar
   - Scroll wheel por painel (editor, árvore, SCM)
   - Botão direito → which-key
+  - Capture do terminal só quando ligado (não “come” o scroll do emulador por default)
 - **Surround** (`F8`): envolve seleção com `()[]{}<>"'``
 - **Macro** (`F9` grava/para · `F10` play)
 - **Multi-picker** (`Ctrl+Shift+T`): buffers + commands + files

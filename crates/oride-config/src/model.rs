@@ -18,7 +18,7 @@ pub struct Config {
     pub tree: TreeConfig,
     pub terminal: TerminalConfig,
     pub lsp: LspConfig,
-    /// Captura de mouse (clique, drag, scroll).
+    /// Captura de mouse (clique, drag, scroll). **Default: off** — ativar no TOML ou menu View.
     pub mouse: bool,
     /// Chord string → action id (`"ctrl+s" = "save"`).
     pub keys: BTreeMap<String, String>,
@@ -36,7 +36,7 @@ impl Default for Config {
             tree: TreeConfig::default(),
             terminal: TerminalConfig::default(),
             lsp: LspConfig::default(),
-            mouse: true,
+            mouse: false,
             keys: default_key_bindings(),
         }
     }
