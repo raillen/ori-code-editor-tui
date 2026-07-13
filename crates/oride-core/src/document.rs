@@ -581,6 +581,17 @@ impl Document {
         self.preferred_column = None;
         self.undo.commit_group();
     }
+
+    /// Atualiza seleção sem fechar grupo de undo (drag do mouse).
+    pub fn set_selection_live(&mut self, anchor: ByteOffset, head: ByteOffset) {
+        let len = self.buffer.len_bytes();
+        let a = ByteOffset::new(anchor.as_usize().min(len));
+        let h = ByteOffset::new(head.as_usize().min(len));
+        self.selection = Selection::new(a, h);
+        self.extra_carets.clear();
+        self.preferred_column = None;
+        // não commit_group — drag gera dezenas de updates por segundo
+    }
 }
 
 /// Coleção de documentos abertos + tab ativa.

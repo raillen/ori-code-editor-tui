@@ -33,8 +33,8 @@ use crate::find::FindState;
 use crate::jump_list::{Jump, JumpList};
 use crate::menus::default_menus;
 use crate::mouse::{
-    list_row_at, menu_index_at, screen_to_caret, tab_index_at, tree_row_at, word_bounds,
-    HitRegions, HitTarget,
+    is_multi_click, list_row_at, menu_index_at, screen_to_caret, tab_index_at, tree_row_at,
+    word_bounds, HitRegions, HitTarget,
 };
 use crate::session::Session;
 use crate::split::{SplitOrientation, SplitState};
@@ -2750,24 +2750,23 @@ impl App {
         }
     }
 
+    /// Em drag de seleção (timeout do loop de eventos mais curto).
+    #[must_use]
+    pub fn is_mouse_dragging(&self) -> bool {
+        self.mouse_enabled && self.mouse_drag_anchor.is_some()
+    }
+
     /// Eventos de mouse (clique, drag, scroll, foco de painéis).
     pub fn handle_mouse(&mut self, ev: MouseEvent) {
         if !self.mouse_enabled {
             return;
         }
-        // overlays: scroll na lista se for picker
         if !matches!(self.overlay, Overlay::None) {
-            match ev.kind {
-                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                    // reusa setas via fake? ignora por simplicidade
-                }
-                MouseEventKind::Down(MouseButton::Left) => {
-                    if matches!(self.overlay, Overlay::Hover { .. } | Overlay::SurroundPick) {
-                        self.overlay = Overlay::None;
-                        self.surround_pending = false;
-                    }
-                }
-                _ => {}
+            if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left))
+                && matches!(self.overlay, Overlay::Hover { .. } | Overlay::SurroundPick)
+            {
+                self.overlay = Overlay::None;
+                self.surround_pending = false;
             }
             return;
         }
@@ -2792,15 +2791,12 @@ impl App {
                 let up = matches!(ev.kind, MouseEventKind::ScrollUp);
                 match target {
                     HitTarget::Editor => {
-                        let delta = if up { 3usize } else { 0 };
-                        let down = if up { 0 } else { 3usize };
                         if up {
                             self.scroll_y = self.scroll_y.saturating_sub(3);
                         } else {
                             self.scroll_y = self.scroll_y.saturating_add(3);
                         }
                         self.split.sync_scroll(self.scroll_y);
-                        let _ = (delta, down);
                     }
                     HitTarget::Tree => {
                         if let Some(tree) = self.tree.as_mut() {
@@ -2821,7 +2817,6 @@ impl App {
                         }
                     }
                     HitTarget::Terminal => {
-                        // scrollback do PTY é “follow end”; só foca
                         self.focus = Focus::Terminal;
                     }
                     _ => {}
@@ -2829,11 +2824,7 @@ impl App {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let now = Instant::now();
-                let multi = if let Some((t, lx, ly)) = self.last_click {
-                    t.elapsed().as_millis() < 400 && lx == x && ly == y
-                } else {
-                    false
-                };
+                let multi = is_multi_click(self.last_click, x, y, 450);
                 if multi {
                     self.click_count = self.click_count.saturating_add(1).min(3);
                 } else {
@@ -2843,15 +2834,16 @@ impl App {
                 self.mouse_down_at(target, x, y, self.click_count);
             }
             MouseEventKind::Drag(MouseButton::Left) => {
-                if target == HitTarget::Editor || self.mouse_drag_anchor.is_some() {
+                // Continua o drag mesmo se o cursor saiu um pouco do editor
+                if self.mouse_drag_anchor.is_some() || target == HitTarget::Editor {
                     self.mouse_drag_to(x, y);
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
+                // não limpa seleção — só encerra o modo drag
                 self.mouse_drag_anchor = None;
             }
             MouseEventKind::Down(MouseButton::Right) => {
-                // botão direito: which-key / menu contextual simples
                 self.show_which_key = true;
             }
             _ => {}
@@ -2975,11 +2967,12 @@ impl App {
         let Ok(byte) = doc.buffer().caret_to_byte(caret) else {
             return;
         };
+        let line = caret.line;
         let _ = doc;
+
         if clicks >= 3 {
             // linha inteira
             if let Ok(doc) = self.store.active_mut() {
-                let line = caret.line;
                 let start = doc.buffer().line_to_byte(line).unwrap_or(byte);
                 let end = if line + 1 < doc.buffer().line_count() {
                     doc.buffer()
@@ -2990,13 +2983,15 @@ impl App {
                 };
                 doc.select_byte_range(start, end);
             }
+            // triplo: não inicia drag (seleção já fechada)
             self.mouse_drag_anchor = None;
-        } else if clicks == 2 {
+        } else if clicks >= 2 {
             if let Ok(doc) = self.store.active_mut() {
                 let (s, e) = word_bounds(doc.buffer(), byte);
                 doc.select_byte_range(s, e);
-                self.mouse_drag_anchor = Some(s);
             }
+            // duplo: não arrasta a partir daqui (senão o Up/movimento estreita a palavra)
+            self.mouse_drag_anchor = None;
         } else {
             if let Ok(doc) = self.store.active_mut() {
                 doc.jump_to_byte(byte);
@@ -3021,8 +3016,10 @@ impl App {
         };
         let _ = doc;
         if let Ok(doc) = self.store.active_mut() {
-            doc.select_byte_range(anchor, head);
+            // live: sem commit_group a cada pixel
+            doc.set_selection_live(anchor, head);
         }
+        // só rola se o caret saiu da janela (evita trabalho extra no drag)
         self.ensure_cursor_visible();
     }
 

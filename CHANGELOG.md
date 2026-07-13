@@ -29,6 +29,8 @@
 
 ### Fixed
 
+- **Mouse drag selection lag**: drena a fila de eventos e coalesca `Drag` antes de redesenhar (antes: 1 evento / frame ~100ms)
+- **Duplo-clique na palavra**: tolera ±1 célula; seleciona palavra mesmo no fim do token; Unicode (`olá`); não inicia drag após double-click
 - **Preview Markdown** segue o scroll do editor (não fica preso no topo); `Alt+↑/↓` só faz ajuste fino
 - **Scroll do editor** acompanha o cursor de novo (viewport real + soft-wrap); cursor não some abaixo/acima da tela
 

@@ -77,11 +77,12 @@ pub fn screen_to_caret(
     screen_y: u16,
 ) -> Option<Caret> {
     let ed = hits.editor?;
-    if !contains(ed, screen_x, screen_y) {
-        return None;
-    }
-    let local_x = screen_x.saturating_sub(ed.x);
-    let local_y = screen_y.saturating_sub(ed.y) as usize;
+    // permite 1 célula fora da borda (arrasto saindo do painel)
+    let x = screen_x.clamp(ed.x, ed.x.saturating_add(ed.width.saturating_sub(1)));
+    let y = screen_y.clamp(ed.y, ed.y.saturating_add(ed.height.saturating_sub(1)));
+
+    let local_x = x.saturating_sub(ed.x);
+    let local_y = y.saturating_sub(ed.y) as usize;
     let col_in_text = local_x.saturating_sub(hits.gutter) as usize;
     let text_width = hits.text_width.max(1) as usize;
     let line_count = buffer.line_count().max(1);
@@ -93,7 +94,6 @@ pub fn screen_to_caret(
         return Some(Caret::new(line, col));
     }
 
-    // soft wrap: caminha linhas lógicas contando rows visuais
     let mut visual = 0usize;
     let mut logical = hits.scroll_y;
     while logical < line_count {
@@ -106,9 +106,6 @@ pub fn screen_to_caret(
         }
         visual += rows;
         logical += 1;
-        if visual > local_y + 1000 {
-            break;
-        }
     }
     let line = line_count.saturating_sub(1);
     let content = buffer.line_text(line).unwrap_or_default();
@@ -129,7 +126,6 @@ fn line_visual_rows(content: &str, width: usize) -> usize {
 #[must_use]
 pub fn tree_row_at(tree_area: Rect, tree_scroll: usize, y: u16) -> Option<usize> {
     if y < tree_area.y.saturating_add(1) {
-        // borda/título
         return None;
     }
     let inner_y = y.saturating_sub(tree_area.y.saturating_add(1)) as usize;
@@ -174,47 +170,85 @@ pub fn tab_index_at(tabs_area: Rect, tab_count: usize, x: u16) -> Option<usize> 
     Some((local / w).min(tab_count - 1))
 }
 
-/// Expande seleção para palavra sob o caret.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Expande seleção para palavra sob o offset (ou imediatamente à esquerda).
+///
+/// Clicar no **fim** da palavra (caret após o último char) ainda seleciona a palavra.
 #[must_use]
 pub fn word_bounds(buffer: &Buffer, at: ByteOffset) -> (ByteOffset, ByteOffset) {
     let text = buffer.as_string();
-    let bytes = text.as_bytes();
-    let mut i = at.as_usize().min(bytes.len());
-    if i > 0 && i == bytes.len() {
+    if text.is_empty() {
+        return (ByteOffset::new(0), ByteOffset::new(0));
+    }
+
+    let mut i = at.as_usize().min(text.len());
+    // garante boundary
+    while i > 0 && !text.is_char_boundary(i) {
         i -= 1;
-        while i > 0 && !text.is_char_boundary(i) {
-            i -= 1;
+    }
+
+    // Se estamos no fim ou em não-palavra, recua 1 char
+    let on_word = text[i..].chars().next().is_some_and(is_word_char);
+    if !on_word {
+        if i == 0 {
+            return (ByteOffset::new(i), ByteOffset::new(i));
         }
-    }
-    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-    // se não for word char, só caret
-    if i >= bytes.len() || !is_word(bytes[i]) {
-        return (at, at);
-    }
-    let mut start = i;
-    while start > 0 {
-        let prev = start - 1;
-        let mut p = prev;
+        let mut p = i - 1;
         while p > 0 && !text.is_char_boundary(p) {
             p -= 1;
         }
-        if !is_word(bytes[p]) {
+        if text[p..].chars().next().is_some_and(is_word_char) {
+            i = p;
+        } else {
+            return (ByteOffset::new(i), ByteOffset::new(i));
+        }
+    }
+
+    // expand start
+    let mut start = i;
+    while start > 0 {
+        let mut p = start - 1;
+        while p > 0 && !text.is_char_boundary(p) {
+            p -= 1;
+        }
+        if !text[p..].chars().next().is_some_and(is_word_char) {
             break;
         }
         start = p;
     }
+
+    // expand end
     let mut end = i;
-    while end < bytes.len() {
-        if !text.is_char_boundary(end) {
-            end += 1;
-            continue;
-        }
-        if !is_word(bytes[end]) {
+    for c in text[i..].chars() {
+        if !is_word_char(c) {
             break;
         }
-        end += 1;
+        end += c.len_utf8();
     }
+
     (ByteOffset::new(start), ByteOffset::new(end))
+}
+
+/// Clique multiplo: mesma célula (±1) em ≤450ms.
+#[must_use]
+pub fn is_multi_click(
+    last: Option<(std::time::Instant, u16, u16)>,
+    x: u16,
+    y: u16,
+    max_ms: u128,
+) -> bool {
+    let Some((t, lx, ly)) = last else {
+        return false;
+    };
+    if t.elapsed().as_millis() > max_ms {
+        return false;
+    }
+    let dx = (lx as i32 - x as i32).unsigned_abs();
+    let dy = (ly as i32 - y as i32).unsigned_abs();
+    dx <= 1 && dy <= 1
 }
 
 #[cfg(test)]
@@ -253,7 +287,31 @@ mod tests {
     #[test]
     fn word_bounds_ident() {
         let buf = Buffer::from_text("foo bar_baz");
-        let (s, e) = word_bounds(&buf, ByteOffset::new(5)); // inside bar_baz
+        let (s, e) = word_bounds(&buf, ByteOffset::new(5)); // 'b' of bar_baz
         assert_eq!(&buf.as_string()[s.as_usize()..e.as_usize()], "bar_baz");
+    }
+
+    #[test]
+    fn word_bounds_at_end_of_word() {
+        // offset após "foo" (índice 3 = espaço) → ainda pega "foo"
+        let buf = Buffer::from_text("foo bar");
+        let (s, e) = word_bounds(&buf, ByteOffset::new(3));
+        assert_eq!(&buf.as_string()[s.as_usize()..e.as_usize()], "foo");
+    }
+
+    #[test]
+    fn word_bounds_unicode() {
+        let buf = Buffer::from_text("olá mundo");
+        // 'l' de olá
+        let (s, e) = word_bounds(&buf, ByteOffset::new(2));
+        assert_eq!(&buf.as_string()[s.as_usize()..e.as_usize()], "olá");
+    }
+
+    #[test]
+    fn multi_click_tolerance() {
+        use std::time::Instant;
+        let t = Instant::now();
+        assert!(is_multi_click(Some((t, 10, 5)), 11, 5, 450));
+        assert!(!is_multi_click(Some((t, 10, 5)), 15, 5, 450));
     }
 }
