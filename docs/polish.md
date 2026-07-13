@@ -1,6 +1,8 @@
 # Polimento 0.1 (P4) + LSP (P3)
 
-## Feito (alpha.5)
+Histórico de polish. Roadmap atual: [`planning/alpha6-roadmap.md`](planning/alpha6-roadmap.md) (**0.1.0-alpha.6**).
+
+## Feito (até alpha.5; consolidado em alpha.6)
 
 ### P4
 
