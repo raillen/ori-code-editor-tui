@@ -1,6 +1,7 @@
 # Plugin API (P8 — built-in)
 
-O Oride **não** carrega plugins externos (Lua/WASM). Extensões são crates Rust
+O Oride **não** carrega plugins externos (Lua/WASM/dynload) — **anti-bloat**
+([roadmap alpha.6](planning/alpha6-roadmap.md)). Extensões são crates Rust
 embutidos no binário, registrados em `PluginHost` no boot.
 
 Crate: **`oride-plugin`**.
@@ -22,7 +23,8 @@ pub trait LanguageProvider: Send + Sync {
 }
 ```
 
-Providers built-in: plain, oriscript, markdown, mdx, html, css, javascript.
+Providers built-in (alpha.6): plain, oriscript, markdown, mdx, html, css, javascript.  
+Alvo L1: + rust, python, typescript, nim, ruby, ori-lang.
 
 Uso no app: `plugin_host.language(lang)` em toggle comment e soft wrap default.
 

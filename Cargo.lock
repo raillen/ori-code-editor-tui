@@ -848,7 +848,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "oride"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "anyhow",
  "oride-app",
@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "oride-app"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "anyhow",
  "arboard",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "oride-config"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "dirs",
  "serde",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "oride-core"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "ropey",
  "thiserror 2.0.18",
@@ -904,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "oride-fs"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "tempfile",
  "thiserror 2.0.18",
@@ -912,14 +912,14 @@ dependencies = [
 
 [[package]]
 name = "oride-git"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "oride-keymap"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "crossterm",
  "thiserror 2.0.18",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "oride-lsp"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "anyhow",
  "serde",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "oride-plugin"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "oride-syntax",
  "thiserror 2.0.18",
@@ -946,7 +946,7 @@ dependencies = [
 
 [[package]]
 name = "oride-search"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "ignore",
  "regex",
@@ -957,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "oride-syntax"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "tempfile",
  "thiserror 2.0.18",
@@ -971,7 +971,7 @@ dependencies = [
 
 [[package]]
 name = "oride-terminal"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "portable-pty",
  "strip-ansi-escapes",
@@ -980,7 +980,7 @@ dependencies = [
 
 [[package]]
 name = "oride-ui"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 dependencies = [
  "oride-config",
  "oride-core",

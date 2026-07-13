@@ -5,20 +5,20 @@
 tree, collapsible embedded terminal, and first-class support for Markdown,
 HTML, CSS, and JavaScript.
 
-Status: **`0.1.0-alpha.5`** — P2 + **P4 polish** + **P3 LSP** (diagnostics/complete/hover/goto/format).  
+Status: **`0.1.0-alpha.6`** — mini-IDE TUI contida (editor, tree, terminal, git/SCM, find, LSP OriScript, MD preview, splits, mouse opt-in).  
 Repo: [raillen/ori-code-editor-tui](https://github.com/raillen/ori-code-editor-tui).  
-Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/markdown.md) · [polish](docs/polish.md).
+Docs: [design](docs/design.md) · [config](docs/config.md) · [markdown](docs/markdown.md) · **[roadmap alpha.6+](docs/planning/alpha6-roadmap.md)**.
 
-## Goals (0.1 “mini IDE”)
+## Goals (produto contido)
 
-- Multi-tab editor with undo/redo
-- Project tree (create files/folders) + icons (Nerd Fonts)
-- Embedded terminal (toggle + resize)
-- **Syntax highlight (tree-sitter):** `.oris`, Markdown, HTML, CSS, JS
-- Config / keymaps / themes / `[lsp]` via **TOML**
-- **OriScript LSP** via `oriscript lsp` on `PATH`
-- Command palette, fuzzy open, git status, find/replace (regex), session
-- Built-in **plugin surface** (`oride-plugin`; e.g. palette “Plugin: word count”)
+- Tudo no TUI — **sem** preview HTML/browser, **sem** macros (remoção planejada), **sem** host de plugins externos
+- Multi-tab, tree, terminal PTY, find (buffer + project), git status/SCM, session leve
+- **First-class languages (alvo):** OriScript, Ori-lang, Markdown, HTML, CSS, JS/TS, Rust, Python, Nim, Ruby  
+  (hoje estáveis: OriScript + MD/HTML/CSS/JS; demais no [roadmap](docs/planning/alpha6-roadmap.md) L1)
+- Config TOML · keymaps · **OriScript LSP** (`oriscript lsp` no `PATH`)
+- MD preview **no terminal** (texto + placeholders; imagens via protocolo do terminal = planejado)
+- Links no preview → abrir no **navegador do sistema** (planejado M1)
+- Mouse **opt-in** (`mouse = false` default)
 
 ## Build & run
 
@@ -89,14 +89,16 @@ cargo build --release
 **Icons:** Nerd Font glyphs (ASCII fallback exists in code).  
 **Mouse (default off):** ativar com `mouse = true` no TOML ou **View → Enable / disable mouse** (palette). Com on: clique = caret · drag = seleção · duplo = palavra · scroll por painel.
 
-### Tier B (MVP)
+### Extras úteis
 
 | Key | Action |
 |-----|--------|
 | `F8` | Surround seleção com par `()[]{}…` |
-| `F9` / `F10` | Macro grava/para · play |
 | `Ctrl+Shift+T` | Multi-picker (buffers + cmds + files) |
 | `Ctrl+Shift+U` | Histórico de undo |
+| View → Enable mouse | Liga captura de mouse (ou `mouse = true`) |
+
+Macros (`F9`/`F10`) estão **deprecated** e serão removidas (anti-bloat).
 
 ### Config
 

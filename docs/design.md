@@ -345,7 +345,8 @@ Cada PR = um conceito; ordem topologicamente segura.
 
 Ver plano canônico: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)**.
 
-Resumo: **P5** project find (`Ctrl+Shift+F`, rg+Rust) → **P6** fence injections → **P7** MD preview ANSI → **P8** plugin surface incremental → **splits / multi-cursor** só em minor/major posteriores.
+**Roadmap atual (normativo):** [`docs/planning/alpha6-roadmap.md`](planning/alpha6-roadmap.md)  
+(`0.1.0-alpha.6`+). P5–P9 do post-0.1 já entregues; próximos: languages L1, MD links/images no terminal, hygiene anti-bloat (sem macros, sem preview HTML).
 
 ---
 

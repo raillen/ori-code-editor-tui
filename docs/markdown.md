@@ -69,28 +69,27 @@ Linha só com imagem vira card:
 - `http(s)://` → nota “URL remota · não embutida”
 - Inline no meio do parágrafo → chip compacto `🖼 alt`
 
-**Não** desenha PNG/JPEG no terminal (limitação TUI). Viewer externo = futuro opcional.
+**Não** abre preview HTML/browser (fora de escopo). Imagens hoje = placeholder no TUI.
 
 ## Limitações atuais
 
 - Soft wrap: scroll vertical usa linhas lógicas + altura visual
-- Preview de imagem = placeholder, não pixels
+- Preview de imagem = placeholder (não pixels), exceto quando **M2** (protocolo do terminal) estiver on
 - Tabelas sem alinhamento de colunas avançado
+- Links ainda não são clicáveis (planejado **M1**)
 
-## Futuro (plano pós-0.1)
+## Roadmap MD (normativo)
 
-Decisões e fatias: **[`docs/planning/post-0.1-roadmap.md`](planning/post-0.1-roadmap.md)**.
+Ver **[`docs/planning/alpha6-roadmap.md`](planning/alpha6-roadmap.md)** seções **M1** / **M2**.
 
 | Item | Descrição | Status |
 |------|-----------|--------|
-| Highlight em code fences | Injection oris/js/… | feito (P6) |
-| Preview Markdown ANSI | Painel TUI | feito + placeholders |
-| Abrir imagem no viewer do SO | `xdg-open` no path | futuro |
-| Protocolo Kitty/Sixel | imagem no terminal | opcional / frágil |
-| Preview HTML/browser | imagens reais | major futura |
-| Parse JSX no MDX | além do MD genérico | futuro |
-
-Outros desejáveis: wiki-links, outline de headings na palette.
+| Highlight + fence inject | oris/js/html/css (+ langs L1) | feito / expandir L1 |
+| Preview Markdown TUI | painel read-only | feito + placeholders |
+| **Links → browser do sistema** | clique/ação no preview; não é “preview no browser” | **M1 planejado** |
+| **Imagens no terminal** | Kitty/Sixel/iTerm best-effort; flag off default | **M2 planejado** |
+| Preview HTML/browser do documento | — | **fora de escopo** |
+| MDX/JSX real | — | fora (contido) |
 
 ## Validação
 

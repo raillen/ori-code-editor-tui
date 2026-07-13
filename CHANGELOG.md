@@ -2,82 +2,50 @@
 
 ## Unreleased
 
-### Added (mouse + tier B)
+- (próximo: languages first-class, MD links, images via terminal protocol — ver `docs/planning/alpha6-roadmap.md`)
+- Remoção planejada de **macros** (anti-bloat)
 
-- **Mouse completo** (**default off** — ativar com `mouse = true` no TOML ou **View → Enable mouse** / palette):
-  - Clique editor → caret; drag → seleção; duplo → palavra; triplo → linha
-  - Clique árvore/abas/SCM/terminal/menu → foco / ativar
-  - Scroll wheel por painel (editor, árvore, SCM)
-  - Botão direito → which-key
-  - Capture do terminal só quando ligado (não “come” o scroll do emulador por default)
-- **Surround** (`F8`): envolve seleção com `()[]{}<>"'``
-- **Macro** (`F9` grava/para · `F10` play)
-- **Multi-picker** (`Ctrl+Shift+T`): buffers + commands + files
-- **Undo history** (`Ctrl+Shift+U`): lista resumos e desfaz até o item
-- **Fora deste corte (tier B restante):** full vim modal, inlay hints densos, telescope monstro, session workspace avançada
+## 0.1.0-alpha.6
+
+Baseline mini-IDE TUI contida. Plano normativo: [`docs/planning/alpha6-roadmap.md`](docs/planning/alpha6-roadmap.md).
+
+### Added (mouse)
+
+- **Mouse completo** (**default off** — `mouse = true` no TOML ou **View → Enable mouse** / palette)
+- Clique → caret · drag → seleção · duplo → palavra · triplo → linha
+- Clique árvore/abas/SCM/terminal/menu · scroll por painel · botão direito → which-key
+- Capture só quando ligado (não rouba scroll do emulador no default)
+
+### Added (navigation / git UX)
+
+- **Surround** (`F8`) · **Multi-picker** (`Ctrl+Shift+T`) · **Undo history** (`Ctrl+Shift+U`)
+- **SCM panel** (`Ctrl+Shift+G`) · buffer picker · jump list · blame · diff read-only (`F2`)
+- Menu bar, context banner, which-key, welcome, find mini-modal
 
 ### Added (find)
 
-- **Palavra completa** no find/replace (`Alt+W`): não casa substring dentro de identificador (ex.: `UI` em `GUI`)
-- **Modal Find/Replace redesenhado**: campos separados, 1 opção por linha com atalho, contagem isolada (menos “amontoado”)
-- Labels do modal mais claros: case / accent / word / re
+- Palavra completa (`Alt+W`) · modal Find/Replace legível · project find (`Ctrl+Shift+F`, rg+fallback)
 
-### Added (markdown preview)
+### Added (markdown)
 
-- **Placeholder de imagem** `![alt](path)`: card com alt, path e status (local ✓/✗ ou URL remota)
-- Paths de imagem relativos à pasta do `.md` aberto
-- Preview texto mais rico: task lists, tabelas, setext headings, frontmatter, `~~strike~~`, `__bold__`, autolink, links `→ url`
+- Preview TUI + placeholders de imagem · task lists/tabelas/frontmatter/strike · fence inject oris/js/html/css
+- Preview segue scroll do editor
+
+### Added (P5–P9 stack)
+
+- Plugins built-in · splits · multi-cursor · terminal PTY interativo · LSP OriScript (alpha.5+)
 
 ### Fixed
 
-- **Mouse drag selection lag**: drena a fila de eventos e coalesca `Drag` antes de redesenhar (antes: 1 evento / frame ~100ms)
-- **Duplo-clique na palavra**: tolera ±1 célula; seleciona palavra mesmo no fim do token; Unicode (`olá`); não inicia drag após double-click
-- **Preview Markdown** segue o scroll do editor (não fica preso no topo); `Alt+↑/↓` só faz ajuste fino
-- **Scroll do editor** acompanha o cursor de novo (viewport real + soft-wrap); cursor não some abaixo/acima da tela
+- Mouse drag lag (drain/coalesce events) · double-click word · editor scroll follows caret
 
-### Added (UX polish — tiers S+A)
+### Docs
 
-- **Terminal usável como shell do sistema**: spawn interativo (`-i`), Ctrl+A–Z no PTY (Ctrl+C/D/…), Esc→editor, borda ciano + erros de PTY
-- **Menu bar** File/Edit/View/Go/Git/Help (`Alt+F`…, ↑↓ Enter, Esc)
-- **Context banner** de alto contraste: `FOCUS: EDITOR|TREE|TERMINAL|SCM`
-- **Status limpa**: file · Ln/Col · git:branch · blame · hint `F1 · Ctrl+Shift+P`
-- **Which-key** (`Alt+/`) e **welcome essentials** na 1ª sessão
-- **Find/replace mini-modal** centrado (`Ctrl+F` / `Ctrl+H`)
-- **SCM panel direito** (`Ctrl+Shift+G`): arquivos sujos M/A/D/? · Enter abre · `d` diff · `r` refresh
-- **Buffer picker** (`Ctrl+Shift+O`), **jump list** (`Ctrl+Alt+O/I`), **git blame** na status, **diff read-only** (`F2`)
-- **Mouse completo**: documentado como **futuro** (pós S+A) em `docs/planning/ux-polish-plan.md`
-- **Tier B** (surround, undo tree, macros…): futuro
+- Plano **alpha.6+** contido (sem macros, sem preview HTML/browser)
 
-### Added (P5)
+### Note
 
-- **Find in project** (`Ctrl+Shift+F`): crate `oride-search` com backend `rg` + fallback Rust (`ignore`)
-- Lista de hits com Enter → abre arquivo e posiciona caret
-- Opções `Alt+C` case · `Alt+R` regex no project find
-- `ctrl+shift+d` = nova pasta na árvore (antes `ctrl+shift+f`, liberado para project find)
-
-### Added (P6)
-
-- **Language injections** em fences Markdown: ` ```oris `/`js`/`html`/`css` com highlight da grammar correspondente
-
-### Added (P7)
-
-- **Preview Markdown ANSI/TUI** (`Ctrl+Shift+V` / `Alt+P`): painel read-only ao lado do editor
-- Scroll do preview: `Alt+↑/↓` / `Alt+PgUp/PgDn`
-
-### Added (P8)
-
-- Crate **`oride-plugin`**: `LanguageProvider`, `Plugin`, `PluginCtx`, `PluginHost`
-- Providers built-in (oris/md/html/css/js) — comentário e soft wrap via host
-- Plugins na palette: **word count**, **show file path**
-- Hooks `OnOpen` / `OnSave` (lifecycle silencioso por default)
-- Docs: `docs/plugin-api.md`
-
-### Added (P9 splits + multi-cursor)
-
-- **Split** vertical/horizontal: `Ctrl+Alt+V` / `Ctrl+Alt+H` (até 2 panes)
-- Troca de pane: `F6` / `Ctrl+Alt+←→` · fechar pane: `Ctrl+Alt+W`
-- **Multi-cursor**: `Ctrl+Alt+↑/↓` adiciona · digite em todos · `Ctrl+Alt+U` limpa
-- Carets extras em amarelo; primário mantém estilo de cursor
+- Macros (`F9`/`F10`) presentes nesta tag mas **marcadas para remoção** (R1 no roadmap); não expandir
 
 ## 0.1.0-alpha.5
 

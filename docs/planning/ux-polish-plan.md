@@ -1,20 +1,22 @@
 # Plano de polish UX / ND-acessibilidade (Oride)
 
-**Status:** implementado (S+A) — mouse e tier B futuros  
+**Status:** S+A + mouse opt-in + MVPs de navegação **entregues** (baseline **0.1.0-alpha.6**).  
+**Próximo normativo:** [`alpha6-roadmap.md`](alpha6-roadmap.md).  
 **Princípio:** descoberta > memorização; um foco óbvio; no máx. 3 regiões “sempre on”; Esc sempre sai.
 
 ---
 
-## Decisões do produto
+## Decisões do produto (atualizadas)
 
 | Item | Decisão |
 |------|---------|
-| **Mouse completo** | **Futuro** (após restante deste plano) — ver § Futuro |
-| **Menu bar** (File/Edit/…) | **Urgente — implementar** |
-| **Painel SCM/git à direita** | **Urgente — implementar** (status de arquivos, não 2ª project tree) |
-| **Tier S + A** (Helix/LazyVim/Micro) | **Implementar** |
-| **Tier B** | **Futuro** |
-| **Terminal** | Corrigir para uso real (como shell do sistema) |
+| **Mouse** | **Feito**, default **off** (`mouse = true` ou menu View) |
+| **Menu bar** | **Feito** |
+| **Painel SCM** | **Feito** |
+| **Tier S + A** | **Feito** |
+| **Macros** | **Remover** (anti-bloat) — ver roadmap R1 |
+| **Preview HTML/browser** | **Fora de escopo** |
+| **Terminal** | **Feito** (PTY interativo; polish residual no roadmap) |
 
 ---
 
@@ -50,10 +52,10 @@
 | Undo history panel | **MVP** `Ctrl+Shift+U` (não árvore ramificada) |
 | Multi-source picker | **MVP** `Ctrl+Shift+T` (buf+cmd+file) |
 | Macros | **MVP** `F9`/`F10` |
-| Full vim modal default | **futuro** |
-| Inlay hints densos | **futuro** (LSP) |
-| Session workspace avançada | **futuro** |
-| Telescope monstro | **futuro** |
+| Macros | **remover** (R1) — não expandir |
+| Full vim / telescope monstro / undo tree ramos | **fora** (alpha6-roadmap §1) |
+| Session layout (scroll/splits) | **planejado** E1.1 |
+| Inlay hints densos | **fora** salvo toggle trivial pós-L2 |
 
 ## Mouse
 
